@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/sshady-logo.png" alt="sshady logo" width="180" />
+</p>
+
 # sshady
 
 Stop leaking your real IP every time you SSH into a server.
@@ -162,9 +166,3 @@ ssh myserver
 - All writes are atomic (temp file + rename, no partial writes).
 - `~/.ssh/config` is always written with `0600` permissions.
 - If you use proxy authentication, credentials are stored in plaintext inside `~/.ssh/config`. Keep that file private and never commit it.
-
----
-
-## License
-
-MIT
