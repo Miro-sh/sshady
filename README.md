@@ -1,10 +1,10 @@
 # sshady
 
-SSH proxy config generator -- hide your IP, look innocent.
+Stop leaking your real IP every time you SSH into a server.
 
-`sshady` is a small CLI tool written in Go that creates SSH `Host` entries with proxy settings and writes them directly to `~/.ssh/config`. Answer a few questions in the interactive wizard, or pass flags directly, and get a ready-to-use SSH alias that routes your traffic through a proxy.
+`sshady` generates SSH proxy configs and writes them straight to `~/.ssh/config`. One wizard, one alias, your traffic routes through SOCKS5 / HTTP / Tor / jump host -- the target sees the proxy, not you.
 
-Supports SOCKS5, HTTP CONNECT, Tor, and SSH jump hosts -- with or without authentication.
+Built for opsec-conscious sysadmins, pentesters, and anyone who cares where their packets come from.
 
 ---
 
