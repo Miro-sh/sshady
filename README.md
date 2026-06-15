@@ -47,7 +47,7 @@ Run `sshady` with no arguments and answer the prompts:
 sshady
 ```
 
-<!-- SCREENSHOT: paste your ray.so image of the wizard here -->
+![sshady wizard](assets/sshady-1.png)
 
 ### Non-interactive (flags)
 
