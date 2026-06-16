@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/sshady-logo.png" alt="sshady logo" width="320" />
+  <img src="assets/sshady-logo.png" alt="sshady logo" />
 </p>
 
 # sshady
