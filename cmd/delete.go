@@ -28,7 +28,10 @@ Use --dry-run to preview without modifying the config.`,
 			return err
 		}
 
-		configPath, _ := sshconf.ConfigFilePath()
+		configPath, err := sshconf.ConfigFilePath()
+	if err != nil {
+		configPath = "~/.ssh/config"
+	}
 		fmt.Printf("✓ Removed 'Host %s' from %s
 ", alias, configPath)
 		fmt.Println("  A timestamped backup was saved.")

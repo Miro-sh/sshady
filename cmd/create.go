@@ -42,6 +42,9 @@ as it exposes the password in the process list (visible via ps aux).`,
 	Example: `  # Interactive wizard
   sshady create
 
+  # SOCKS4 proxy (no auth)
+  sshady create --alias s4 --host 10.0.0.5 \n    --proxy-type socks4 --proxy-host proxy.example.com
+
   # SOCKS5 proxy (password via environment variable — most secure)
   SSHADY_PROXY_PASS=s3cr3t sshady create \
     --alias myserver --host 1.2.3.4 --user admin \
@@ -72,7 +75,8 @@ as it exposes the password in the process list (visible via ps aux).`,
 			if err != nil {
 				return fmt.Errorf("cannot read proxy password file %q: %w", createFlags.proxyPassFile, err)
 			}
-			createFlags.proxyPass = strings.TrimRight(string(data), "
+			createFlags.proxyPass = strings.TrimRight(string(data), "
+
 ")
 		}
 
@@ -92,7 +96,7 @@ func init() {
 	f.StringVar(&createFlags.sshUser, "user", "", "SSH user (default: current user)")
 	f.StringVar(&createFlags.port, "port", "22", "SSH port")
 	f.StringVar(&createFlags.identityFile, "identity-file", "", "path to SSH private key")
-	f.StringVar(&createFlags.proxyType, "proxy-type", "", "proxy type: socks5, http, tor, jump")
+	f.StringVar(&createFlags.proxyType, "proxy-type", "", "proxy type: socks4, socks4a, socks5, http, tor, jump")
 	f.StringVar(&createFlags.proxyHost, "proxy-host", "", "proxy hostname or IP")
 	f.StringVar(&createFlags.proxyPort, "proxy-port", "1080", "proxy port")
 	f.StringVar(&createFlags.proxyUser, "proxy-user", "", "proxy username")
@@ -106,7 +110,7 @@ func currentUser() string {
 	if u, err := user.Current(); err == nil {
 		return u.Username
 	}
-	return ""
+	return os.Getenv("USER") // fallback for restricted environments
 }
 
 func runWizard() error {
@@ -252,7 +256,7 @@ func buildProxyConfigFromWizard(base struct {
 	ProxyType    string
 }) (proxy.Config, error) {
 	switch base.ProxyType {
-	case "SOCKS5", "HTTP CONNECT":
+	case "SOCKS4", "SOCKS4a", "SOCKS5", "HTTP CONNECT":
 		var pa struct {
 			ProxyHost string
 			ProxyPort string
@@ -301,7 +305,12 @@ func buildProxyConfigFromWizard(base struct {
 			}
 		}
 		pType := proxy.TypeSOCKS5
-		if base.ProxyType == "HTTP CONNECT" {
+		switch base.ProxyType {
+		case "SOCKS4":
+			pType = proxy.TypeSOCKS4
+		case "SOCKS4a":
+			pType = proxy.TypeSOCKS4a
+		case "HTTP CONNECT":
 			pType = proxy.TypeHTTP
 		}
 		return proxy.Config{
@@ -344,6 +353,22 @@ func runNonInteractive() error {
 	}
 
 	switch createFlags.proxyType {
+	case "socks4":
+		if createFlags.proxyHost == "" {
+			return fmt.Errorf("--proxy-host is required for proxy type 'socks4'")
+		}
+		cfg.Proxy = proxy.Config{
+			Type: proxy.TypeSOCKS4, Host: createFlags.proxyHost, Port: createFlags.proxyPort,
+			Username: createFlags.proxyUser, Password: createFlags.proxyPass,
+		}
+	case "socks4a":
+		if createFlags.proxyHost == "" {
+			return fmt.Errorf("--proxy-host is required for proxy type 'socks4a'")
+		}
+		cfg.Proxy = proxy.Config{
+			Type: proxy.TypeSOCKS4a, Host: createFlags.proxyHost, Port: createFlags.proxyPort,
+			Username: createFlags.proxyUser, Password: createFlags.proxyPass,
+		}
 	case "socks5":
 		if createFlags.proxyHost == "" {
 			return fmt.Errorf("--proxy-host is required for proxy type 'socks5'")

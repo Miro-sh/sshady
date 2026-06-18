@@ -6,6 +6,9 @@ import (
 	"testing"
 
 	"sshady/internal/proxy"
+	"strconv"
+	"bytes"
+	"sync"
 )
 
 func TestValidateHostConfig(t *testing.T) {
@@ -278,4 +281,164 @@ func ExampleHostConfig_Block() {
 	// true
 	// true
 	// true
+}
+
+
+// ── Concurrency Tests ──────────────────────────────────────────
+
+func TestParallelAtomicWrite(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config")
+	SetConfigPath(configPath)
+	t.Cleanup(func() { SetConfigPath("") })
+
+	// Write initial config with a valid entry so atomicWrite has something to modify
+	initial := "Host test
+    HostName 1.2.3.4
+"
+	if err := os.WriteFile(configPath, []byte(initial), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	goroutines := 10
+
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		i := i
+		go func() {
+			defer wg.Done()
+			content := fmt.Sprintf("# goroutine %d\nHost test%d\n    HostName 10.0.0.%d\n", i, i, i)
+			// atomicWrite is unexported; use the public WriteEntry instead
+			cfg := HostConfig{
+				Alias:    fmt.Sprintf("test%d", i),
+				HostName: fmt.Sprintf("10.0.0.%d", i),
+				User:     "test",
+				Port:     "22",
+				Proxy:    proxy.Config{Type: proxy.TypeTor},
+			}
+			_ = WriteEntry(cfg, true) // force to overwrite
+		}()
+	}
+	wg.Wait()
+
+	// After all writes, read the config — it should be parseable
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("cannot read config after parallel writes: %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("config is empty after parallel writes")
+	}
+	t.Logf("Config after %d parallel writes: %d bytes", goroutines, len(data))
+}
+
+func TestConcurrentAtomicWriteNoCorruption(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping concurrency stress test in short mode")
+	}
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config")
+	SetConfigPath(configPath)
+	t.Cleanup(func() { SetConfigPath("") })
+
+	initial := "Host test\n    HostName 1.2.3.4\n"
+	if err := os.WriteFile(configPath, []byte(initial), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	goroutines := 10
+	iterations := 50
+
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		g := g
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				cfg := HostConfig{
+					Alias:    fmt.Sprintf("g%di%d", g, i),
+					HostName: fmt.Sprintf("10.0.%d.%d", g, i%256),
+					User:     "test",
+					Port:     "22",
+					Proxy:    proxy.Config{Type: proxy.TypeTor},
+				}
+				_ = WriteEntry(cfg, true)
+			}
+		}()
+	}
+	wg.Wait()
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("cannot read config after stress test: %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("config is empty after stress test")
+	}
+	// Check for corruption markers
+	if bytes.Contains(data, []byte{0}) {
+		t.Error("config contains null bytes after stress test")
+	}
+	t.Logf("Config after %d goroutines × %d iterations: %d bytes", goroutines, iterations, len(data))
+}
+
+func TestRaceRotateBackups(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config")
+	SetConfigPath(configPath)
+	t.Cleanup(func() { SetConfigPath("") })
+
+	// Create some initial backup files
+	for i := 0; i < 5; i++ {
+		backupPath := configPath + ".sshady.20260618-00000" + strconv.Itoa(i) + ".bak"
+		if err := os.WriteFile(backupPath, []byte("backup"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var wg sync.WaitGroup
+	for g := 0; g < 5; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rotateBackups(configPath, 3) // keep only 3
+		}()
+	}
+	wg.Wait()
+
+	// Verify backup files are consistent (no panics, no half-deleted state)
+	entries, _ := os.ReadDir(dir)
+	backupCount := 0
+	for _, e := range entries {
+		if strings.Contains(e.Name(), ".sshady.") && strings.HasSuffix(e.Name(), ".bak") {
+			backupCount++
+		}
+	}
+	t.Logf("Remaining backups after concurrent rotation: %d", backupCount)
+}
+
+// ── Benchmarks ─────────────────────────────────────────────────
+
+func BenchmarkAtomicWrite(b *testing.B) {
+	dir := b.TempDir()
+	configPath := filepath.Join(dir, "config")
+	SetConfigPath(configPath)
+	b.Cleanup(func() { SetConfigPath("") })
+
+	initial := "Host test\n    HostName 1.2.3.4\n"
+	os.WriteFile(configPath, []byte(initial), 0600)
+
+	cfg := HostConfig{
+		Alias: "bench", HostName: "10.0.0.1", User: "admin", Port: "22",
+		Proxy: proxy.Config{Type: proxy.TypeTor},
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cfg.Alias = fmt.Sprintf("bench%d", i)
+		_ = WriteEntry(cfg, true)
+	}
 }

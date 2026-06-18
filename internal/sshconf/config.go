@@ -334,6 +334,10 @@ func parseMetaSummary(meta string) string {
 			s += " (auth)"
 		}
 		return s
+	case "socks4":
+		return fmt.Sprintf("SOCKS4 via %s", fields["addr"])
+	case "socks4a":
+		return fmt.Sprintf("SOCKS4a via %s", fields["addr"])
 	case "http":
 		s := fmt.Sprintf("HTTP via %s", fields["addr"])
 		if fields["auth"] == "yes" {
@@ -398,7 +402,10 @@ func rotateBackups(configPath string, keep int) error {
 	sort.Strings(backups)
 	toDelete := len(backups) - keep
 	for i := 0; i < toDelete; i++ {
-		os.Remove(filepath.Join(dir, backups[i]))
+		if err := os.Remove(filepath.Join(dir, backups[i])); err != nil {
+			fmt.Fprintf(os.Stderr, "sshady: warning: could not remove old backup %s: %v
+", backups[i], err)
+		}
 	}
 
 	return nil

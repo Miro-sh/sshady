@@ -19,14 +19,20 @@ var listCmd = &cobra.Command{
 		}
 
 		if len(entries) == 0 {
-			configPath, _ := sshconf.ConfigFilePath()
+			configPath, err := sshconf.ConfigFilePath()
+	if err != nil {
+		configPath = "~/.ssh/config"
+	}
 			fmt.Printf("No entries managed by sshady in %s.
 ", configPath)
 			fmt.Println("Run 'sshady create' to add one.")
 			return nil
 		}
 
-		configPath, _ := sshconf.ConfigFilePath()
+		configPath, err := sshconf.ConfigFilePath()
+	if err != nil {
+		configPath = "~/.ssh/config"
+	}
 		fmt.Printf("Managed entries in %s:
 
 ", configPath)

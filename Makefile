@@ -51,3 +51,14 @@ dist:
 	GOOS=darwin  GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o dist/sshady-darwin-amd64 .
 	GOOS=darwin  GOARCH=arm64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o dist/sshady-darwin-arm64 .
 	GOOS=windows GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o dist/sshady-windows-amd64.exe .
+
+# ── Man page ─────────────────────────────────────────────
+
+man: docs/sshady.1
+	@echo "Man page: docs/sshady.1"
+	@echo "Install: sudo cp docs/sshady.1 /usr/local/share/man/man1/"
+	@echo "View:   man ./docs/sshady.1"
+
+install-man: docs/sshady.1
+	install -d $(DESTDIR)/usr/local/share/man/man1
+	install -m 0644 docs/sshady.1 $(DESTDIR)/usr/local/share/man/man1/sshady.1

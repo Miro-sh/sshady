@@ -39,8 +39,10 @@ func TorRunning(addr string) (bool, error) {
 		return false, fmt.Errorf("invalid Tor address %q: %w", addr, err)
 	}
 	cmd := exec.Command("ncat", "-z", "-w", "2", host, port)
-	err := cmd.Run()
-	return err == nil, nil
+	if err := cmd.Run(); err != nil {
+		return false, fmt.Errorf("Tor check failed: ncat %s: %w", addr, err)
+	}
+	return true, nil
 }
 
 // CheckPrerequisites verifies all runtime dependencies.

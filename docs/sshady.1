@@ -1,0 +1,224 @@
+.TH SSHADY 1 "June 2026" "sshady 1.0.0" "User Commands"
+.SH NAME
+sshady \- manage SSH proxy configurations
+.SH SYNOPSIS
+.B sshady
+[\fIglobal-flags\fR]
+.br
+.B sshady create
+[\fI--alias\fR \fIname\fR] [\fI--host\fR \fIaddr\fR] [\fI--user\fR \fIuser\fR]
+[\fI--port\fR \fIport\fR] [\fI--identity-file\fR \fIpath\fR]
+[\fI--proxy-type\fR \fItype\fR] [\fI--proxy-host\fR \fIaddr\fR]
+[\fI--proxy-port\fR \fIport\fR] [\fI--proxy-user\fR \fIuser\fR]
+[\fI--proxy-pass\fR \fIpass\fR] [\fI--proxy-pass-file\fR \fIpath\fR]
+[\fI--jump-host\fR \fIuser@host\fR]
+.br
+.B sshady list
+.br
+.B sshady show
+\fIalias\fR
+.br
+.B sshady validate
+[\fI--all\fR] [\fI--test-proxy\fR] [\fIalias\fR]
+.br
+.B sshady test
+[\fI--timeout\fR \fIseconds\fR] \fIalias\fR
+.br
+.B sshady delete
+\fIalias\fR
+.br
+.B sshady completion
+\fIbash|zsh|fish|powershell\fR
+.SH DESCRIPTION
+\fBsshady\fR generates SSH proxy configuration blocks and writes them
+to \fB~/.ssh/config\fR. It supports SOCKS4, SOCKS4a, SOCKS5, HTTP CONNECT,
+Tor, and SSH jump host proxies.
+.P
+Running \fBsshady\fR with no arguments launches an interactive wizard.
+All subcommands can also be used non-interactively via flags.
+.P
+Entries written by sshady are wrapped in BEGIN/END marker comments
+so they can be tracked, listed, and removed by sshady without
+affecting other SSH configuration.
+.SH OPTIONS
+.SS Global Flags
+.TP
+\fB\-\-config\fR \fIpath\fR
+Use an alternative SSH config file (default: \fI~/.ssh/config\fR).
+.TP
+\fB\-\-dry\-run\fR
+Preview changes without writing to the config file.
+.TP
+\fB\-\-force\fR
+Overwrite existing sshady-managed entries without prompting.
+.TP
+\fB\-\-verbose\fR, \fB\-v\fR
+Enable verbose diagnostic output.
+.TP
+\fB\-\-quiet\fR, \fB\-q\fR
+Suppress non-error output (useful for scripting).
+.TP
+\fB\-\-version\fR
+Print version and exit.
+.TP
+\fB\-\-help\fR
+Print help and exit.
+.SH COMMANDS
+.SS create
+Create a new proxy configuration entry. Without flags, launches an
+interactive wizard.
+.TP
+\fB\-\-alias\fR \fIname\fR
+SSH host alias (required). Must match \fB^[a\-zA\-Z0\-9][a\-zA\-Z0\-9._\-]*$\fR.
+.TP
+\fB\-\-host\fR \fIaddr\fR
+Target hostname or IP address (required).
+.TP
+\fB\-\-user\fR \fIuser\fR
+SSH user (default: current OS user or \fB$USER\fR).
+.TP
+\fB\-\-port\fR \fIport\fR
+SSH port (default: 22).
+.TP
+\fB\-\-identity\-file\fR \fIpath\fR
+Path to SSH private key.
+.TP
+\fB\-\-proxy\-type\fR \fItype\fR
+Proxy type. One of: \fBsocks4\fR, \fBsocks4a\fR, \fBsocks5\fR, \fBhttp\fR, \fBtor\fR, \fBjump\fR.
+.TP
+\fB\-\-proxy\-host\fR \fIaddr\fR
+Proxy hostname or IP (required for socks4/socks4a/socks5/http).
+.TP
+\fB\-\-proxy\-port\fR \fIport\fR
+Proxy port (default: 1080).
+.TP
+\fB\-\-proxy\-user\fR \fIuser\fR
+Proxy authentication username.
+.TP
+\fB\-\-proxy\-pass\fR \fIpass\fR
+Proxy password. WARNING: visible in \fBps aux\fR. Prefer \fB\-\-proxy\-pass\-file\fR.
+.TP
+\fB\-\-proxy\-pass\-file\fR \fIpath\fR
+Read proxy password from file. First line is used, trailing whitespace trimmed.
+.TP
+\fB\-\-jump\-host\fR \fIuser@host\fR
+Jump host for \fB\-\-proxy\-type jump\fR.
+.SS list
+List all entries managed by sshady. Shows alias, target host, proxy type,
+and authentication status.
+.SS show
+Display detailed information for a specific entry, including the
+full SSH config block that would be written.
+.SS validate
+Validate an entry (or all entries with \fB\-\-all\fR).
+Runs \fBssh \-G\fR to check SSH config syntax, then optionally tests
+proxy reachability with \fB\-\-test\-proxy\fR.
+.SS test
+Test proxy TCP reachability using \fBncat \-z\fR. Exits 0 if reachable,
+non-zero otherwise.
+.TP
+\fB\-\-timeout\fR \fIseconds\fR
+Connection timeout in seconds (default: 5, minimum: 1).
+.SS delete
+Remove an sshady-managed entry from the SSH config. A timestamped
+backup is automatically created before removal.
+.SS completion
+Generate shell completion script for the specified shell.
+.P
+.B bash:
+.RS
+source <(sshady completion bash)
+.RE
+.P
+.B zsh:
+.RS
+source <(sshady completion zsh)
+.RE
+.P
+.B fish:
+.RS
+sshady completion fish | source
+.RE
+.P
+.B powershell:
+.RS
+sshady completion powershell | Out\-String | Invoke\-Expression
+.RE
+.SH ENVIRONMENT
+.TP
+\fBSSHADY_CONFIG\fR
+Override the default SSH config path. Equivalent to \fB\-\-config\fR.
+.TP
+\fBSSHADY_HOME\fR
+Override the home directory used for path resolution.
+.TP
+\fBSSHADY_PROXY_PASS\fR
+Proxy password (avoids \fB\-\-proxy\-pass\fR appearing in process list).
+.TP
+\fBSSH_ASKPASS\fR
+If set, sshady respects the SSH askpass program for key prompts.
+.TP
+\fBNO_COLOR\fR
+If set, disable colored output.
+.SH FILES
+.TP
+\fI~/.ssh/config\fR
+SSH client configuration file. sshady reads and writes managed blocks here.
+Permissions are enforced to \fB0600\fR.
+.TP
+\fI~/.ssh/config.sshady.*.bak\fR
+Timestamped backup files (last 5 retained). Format:
+\fIconfig.sshady.YYYYMMDD\-HHMMSS.bak\fR.
+.SH EXIT STATUS
+.TP
+\fB0\fR
+Success.
+.TP
+\fB1\fR
+General error (invalid arguments, config issues).
+.TP
+\fB2\fR
+Proxy unreachable (test/validate --test-proxy).
+.TP
+\fB3\fR
+SSH config syntax error (validate).
+.TP
+\fB4\fR
+Missing prerequisites (ncat not found, etc.).
+.TP
+\fB5\fR
+Interrupted by user.
+.SH SECURITY
+.P
+\fBsshady\fR writes proxy credentials to \fB~/.ssh/config\fR with
+\fB0600\fR permissions. To minimize exposure:
+.IP \(bu 3
+Use \fB\-\-proxy\-pass\-file\fR or \fBSSHADY_PROXY_PASS\fR instead of
+\fB\-\-proxy\-pass\fR (which is visible in \fBps aux\fR).
+.IP \(bu
+Ensure \fB~/.ssh/\fR has \fB0700\fR permissions and \fB~/.ssh/config\fR
+has \fB0600\fR (sshady enforces this automatically).
+.IP \(bu
+SOCKS4/SOCKS4a proxies do not support authentication. Use SOCKS5
+with credentials if authentication is required.
+.IP \(bu
+The \fBtest\fR command establishes a TCP connection to the proxy.
+The proxy operator can see this connection.
+.IP \(bu
+All input values (hostnames, ports, aliases, credentials) are
+validated to prevent command injection and SSH config injection.
+.P
+For vulnerability reporting, see \fBSECURITY.md\fR in the project
+repository.
+.SH SEE ALSO
+\fBssh\fR(1),
+\fBssh_config\fR(5),
+\fBssh\-agent\fR(1),
+\fBnc\fR(1),
+\fBncat\fR(1),
+\fBcurl\fR(1)
+.P
+Project repository: \fIhttps://github.com/Miro\-sh/sshady\fR
+.SH AUTHOR
+sshady was created by Miro\-sh. Security audit, hardening, and
+professional-grade improvements by Lycaris (Hermes Agent).

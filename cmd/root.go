@@ -31,6 +31,29 @@ Run without arguments for the interactive wizard.`,
 	Version:       Version,
 	SilenceUsage:  true,
 	SilenceErrors: true,
+	Example: `  # Launch the interactive wizard
+  sshady
+
+  # Create a proxy config (non-interactive)
+  sshady create --alias myserver --host 1.2.3.4 --user admin --proxy-type socks5 --proxy-host proxy.example.com
+
+  # List all managed entries
+  sshady list
+
+  # Show details
+  sshady show myserver
+
+  # Validate config
+  sshady validate myserver --test-proxy
+
+  # Test proxy reachability
+  sshady test myserver
+
+  # Remove an entry
+  sshady delete myserver
+
+  # Generate shell completion
+  source <(sshady completion bash)`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runWizard()
 	},

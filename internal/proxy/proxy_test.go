@@ -154,16 +154,19 @@ func TestConfigValidate(t *testing.T) {
 		{"valid SOCKS5 auth", Config{Type: TypeSOCKS5, Host: "proxy.example.com", Port: "1080", Username: "alice", Password: "s3cr3t"}, false},
 		{"valid HTTP", Config{Type: TypeHTTP, Host: "proxy.example.com", Port: "8080"}, false},
 		{"valid Tor", Config{Type: TypeTor}, false},
-		{"valid Jump", Config{Type: TypeJump, JumpHost: "bastion@10.0.0.1"}, false},
-		{"valid Jump no user", Config{Type: TypeJump, JumpHost: "10.0.0.1"}, false},
+		{"valid Jump", Config{Type: TypeJump}, false},
+		{"valid SOCKS4", Config{Type: TypeSOCKS4, Host: "proxy.example.com", Port: "1080"}, false},
+		{"valid SOCKS4a", Config{Type: TypeSOCKS4a, Host: "proxy.example.com", Port: "1080"}, false},
+		{"SOCKS4 with auth", Config{Type: TypeSOCKS4, Host: "proxy.example.com", Port: "1080", Username: "alice", Password: "s3cr3t"}, false},
+		{"SOCKS4 default port", Config{Type: TypeSOCKS4, Host: "proxy.example.com"}, false},
 		{"invalid type", Config{Type: "invalid"}, true},
 		{"SOCKS5 missing host", Config{Type: TypeSOCKS5, Port: "1080"}, true},
 		{"SOCKS5 bad host", Config{Type: TypeSOCKS5, Host: "evil;id", Port: "1080"}, true},
 		{"SOCKS5 bad port", Config{Type: TypeSOCKS5, Host: "proxy.example.com", Port: "abc"}, true},
 		{"SOCKS5 port 0", Config{Type: TypeSOCKS5, Host: "proxy.example.com", Port: "0"}, true},
 		{"SOCKS5 port 65536", Config{Type: TypeSOCKS5, Host: "proxy.example.com", Port: "65536"}, true},
-		{"Jump missing host", Config{Type: TypeJump}, true},
-		{"Jump bad user", Config{Type: TypeJump, JumpHost: "evil;id@host"}, true},
+		{"SOCKS4 missing host", Config{Type: TypeSOCKS4, Port: "1080"}, true},
+		{"SOCKS4a missing host", Config{Type: TypeSOCKS4a, Port: "1080"}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -202,8 +205,23 @@ func TestProxyCommand(t *testing.T) {
 			"ncat --proxy-type socks5 --proxy 127.0.0.1:9050 %h %p",
 		},
 		{
+			"SOCKS4 no auth",
+			Config{Type: TypeSOCKS4, Host: "proxy.example.com", Port: "1080"},
+			"ncat --proxy-type socks4 --proxy proxy.example.com:1080 %h %p",
+		},
+		{
+			"SOCKS4 with auth ignored",
+			Config{Type: TypeSOCKS4, Host: "proxy.example.com", Port: "1080", Username: "alice", Password: "s3cr3t"},
+			"ncat --proxy-type socks4 --proxy proxy.example.com:1080 %h %p",
+		},
+		{
+			"SOCKS4a",
+			Config{Type: TypeSOCKS4a, Host: "proxy.example.com", Port: "1080"},
+			"ncat --proxy-type socks4 --proxy proxy.example.com:1080 %h %p",
+		},
+		{
 			"Jump returns empty",
-			Config{Type: TypeJump, JumpHost: "bastion"},
+			Config{Type: TypeJump},
 			"",
 		},
 	}
@@ -223,11 +241,13 @@ func TestSummary(t *testing.T) {
 		cfg  Config
 		want string
 	}{
-		{"SOCKS5 no auth", Config{Type: TypeSOCKS5, Host: "p:1080"}, "SOCKS5 via p:1080"},
+		{"SOCKS5 with port in host", Config{Type: TypeSOCKS5, Host: "proxy.example.com", Port: "1080"}, "SOCKS5 via proxy.example.com:1080"},
 		{"SOCKS5 auth", Config{Type: TypeSOCKS5, Host: "p:1080", Username: "a"}, "SOCKS5 via p:1080 (authenticated)"},
 		{"HTTP", Config{Type: TypeHTTP, Host: "p:8080"}, "HTTP CONNECT via p:8080"},
-		{"Tor", Config{Type: TypeTor}, "Tor (127.0.0.1:9050)"},
-		{"Jump", Config{Type: TypeJump, JumpHost: "b@h"}, "SSH Jump -> b@h"},
+		{"Tor", Config{Type: TypeTor}, "Tor via 127.0.0.1:9050"},
+		{"Jump", Config{Type: TypeJump}, "SSH jump host"},
+		{"SOCKS4", Config{Type: TypeSOCKS4, Host: "proxy.example.com", Port: "1080"}, "SOCKS4 via proxy.example.com:1080"},
+		{"SOCKS4a", Config{Type: TypeSOCKS4a, Host: "proxy.example.com", Port: "1080"}, "SOCKS4a via proxy.example.com:1080"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

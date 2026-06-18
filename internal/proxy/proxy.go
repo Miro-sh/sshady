@@ -14,24 +14,36 @@ import (
 type Type string
 
 const (
-	TypeSOCKS5 Type = "socks5"
-	TypeHTTP   Type = "http"
-	TypeTor    Type = "tor"
-	TypeJump   Type = "jump"
+	TypeSOCKS5  Type = "socks5"
+	TypeSOCKS4  Type = "socks4"
+	TypeSOCKS4a Type = "socks4a"
+	TypeHTTP    Type = "http"
+	TypeTor     Type = "tor"
+	TypeJump    Type = "jump"
 )
 
 // AllowedTypes maps proxy type strings to their Type values.
 var AllowedTypes = map[string]Type{
 	"jump":   TypeJump,
-	"socks5": TypeSOCKS5,
-	"http":   TypeHTTP,
-	"tor":    TypeTor,
+	"socks4":  TypeSOCKS4,
+	"socks4a": TypeSOCKS4a,
+	"socks5":  TypeSOCKS5,
+	"http":    TypeHTTP,
+	"tor":     TypeTor,
 }
 
 // NcatProxyType maps internal proxy types to ncat --proxy-type values.
 var NcatProxyType = map[Type]string{
-	TypeSOCKS5: "socks5",
-	TypeHTTP:   "http-connect",
+	TypeSOCKS4:  "socks4",
+	TypeSOCKS4a: "socks4",
+	TypeSOCKS5:  "socks5",
+	TypeHTTP:    "http-connect",
+}
+
+
+// AllowedTypeStrings returns a comma-separated list of valid proxy type strings.
+func AllowedTypeStrings() string {
+	return "socks4, socks4a, socks5, http, tor, jump"
 }
 
 // ── Validation regexes ────────────────────────────────────────
@@ -79,11 +91,12 @@ func ErrInvalidCredential(field, value string) error {
 
 // Config holds all configuration for a proxy.
 type Config struct {
-	Type     Type   // socks5, http, tor, jump
+	Type     Type   // socks5, socks4, socks4a, http, tor, jump
 	Host     string // Proxy hostname or IP (empty for tor/jump)
-	Port     string // Proxy port (default: 1080 for socks5/http, 9050 for tor)
-	Username string // Proxy auth username
-	Password string // Proxy auth password
+	Port     string // Proxy port (default: 1080, 9050 for tor)
+	Username string // Proxy auth username (ignored for SOCKS4/SOCKS4a)
+	Password string // Proxy auth password (ignored for SOCKS4/SOCKS4a)
+	JumpHost string // SSH jump host in user@host format (only for TypeJump)
 }
 
 // ── Validation ────────────────────────────────────────────────
@@ -155,7 +168,7 @@ func (c *Config) Validate() error {
 	}
 	if c.Port == "" {
 		switch c.Type {
-		case TypeSOCKS5, TypeHTTP:
+		case TypeSOCKS5, TypeHTTP, TypeSOCKS4, TypeSOCKS4a:
 			c.Port = "1080"
 		case TypeTor:
 			c.Port = "9050"
@@ -163,7 +176,7 @@ func (c *Config) Validate() error {
 	}
 
 	switch c.Type {
-	case TypeSOCKS5, TypeHTTP, TypeTor:
+	case TypeSOCKS5, TypeSOCKS4, TypeSOCKS4a, TypeHTTP, TypeTor:
 		if err := ValidateHost(c.Host); err != nil {
 			return err
 		}
@@ -215,7 +228,7 @@ func (c Config) ProxyCommand() string {
 	}
 	base := fmt.Sprintf("ncat --proxy-type %s --proxy %s:%s",
 		NcatProxyType[c.Type], host, port)
-	if c.Username != "" {
+	if c.Username != "" && c.Type != TypeSOCKS4 && c.Type != TypeSOCKS4a {
 		base += fmt.Sprintf(" --proxy-auth %s", c.Username)
 		if c.Password != "" {
 			base += fmt.Sprintf(":%s", c.Password)
@@ -247,6 +260,10 @@ func (c Config) Summary() string {
 	switch c.Type {
 	case TypeSOCKS5:
 		return "SOCKS5 via " + addr + auth
+	case TypeSOCKS4:
+		return "SOCKS4 via " + addr
+	case TypeSOCKS4a:
+		return "SOCKS4a via " + addr
 	case TypeHTTP:
 		return "HTTP CONNECT via " + addr + auth
 	case TypeTor:
