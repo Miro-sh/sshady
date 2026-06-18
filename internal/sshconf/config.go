@@ -71,7 +71,7 @@ func backupPath(configPath string, timestamped bool) string {
 // ── Validation ────────────────────────────────────────────
 
 // ValidateHostConfig checks the entire HostConfig for safety.
-func ValidateHostConfig(cfg HostConfig) error {
+func ValidateHostConfig(cfg *HostConfig) error {
 	if err := proxy.ValidateAlias(cfg.Alias); err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func ValidateHostConfig(cfg HostConfig) error {
 	if cfg.User == "" {
 		return fmt.Errorf("SSH user is required; use --user")
 	}
-	if err := proxy.ValidateUserPass(cfg.User); err != nil {
+	if err := proxy.ValidateUserPass(cfg.User, "SSH user"); err != nil {
 		return fmt.Errorf("SSH user: %w", err)
 	}
 	if cfg.Port == "" {
@@ -132,7 +132,7 @@ func (h HostConfig) Block() string {
 // WriteEntry writes a host entry to the SSH config file.
 // If force is true, overwrites an existing sshady-managed entry with the same alias.
 func WriteEntry(cfg HostConfig, force bool) error {
-	if err := ValidateHostConfig(cfg); err != nil {
+	if err := ValidateHostConfig(&cfg); err != nil {
 		return err
 	}
 

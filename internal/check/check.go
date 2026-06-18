@@ -3,6 +3,7 @@
 package check
 
 import (
+	"net"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -33,9 +34,9 @@ func TorRunning(addr string) (bool, error) {
 		addr = "127.0.0.1:9050"
 	}
 	// Use ncat -z for a quick TCP connect test
-	host, port, ok := strings.Cut(addr, ":")
-	if !ok {
-		return false, fmt.Errorf("invalid Tor address %q", addr)
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false, fmt.Errorf("invalid Tor address %q: %w", addr, err)
 	}
 	cmd := exec.Command("ncat", "-z", "-w", "2", host, port)
 	err := cmd.Run()

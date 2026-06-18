@@ -30,6 +30,10 @@ Exit code 1: proxy is unreachable or the alias is not managed by sshady.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		alias := args[0]
 
+		if testTimeout < 1 {
+			return fmt.Errorf("timeout must be at least 1 second, got %d", testTimeout)
+		}
+
 		entry, err := sshconf.FindEntry(alias)
 		if err != nil {
 			return err
@@ -113,11 +117,11 @@ func splitHostPort(addr string) (host, port string, err error) {
 	if err == nil {
 		return h, p, nil
 	}
-	// Fallback: assume host without port
-	return addr, "", fmt.Errorf("address %q does not contain a valid host:port", addr)
+	// Return empty strings on error so callers don't use raw input
+	return "", "", fmt.Errorf("address %q does not contain a valid host:port", addr)
 }
 
 func init() {
-	testCmd.Flags().IntVar(&testTimeout, "timeout", 5, "Connection timeout in seconds")
+	testCmd.Flags().IntVar(&testTimeout, "timeout", 5, "Connection timeout in seconds (minimum 1)")
 	rootCmd.AddCommand(testCmd)
 }

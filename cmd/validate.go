@@ -29,7 +29,7 @@ Exit code 1: config has issues.`,
 		if len(args) == 0 {
 			return fmt.Errorf("specify an alias or use --all to validate all entries")
 		}
-		return validateOne(args[0])
+		return validateOne(cmd, args[0])
 	},
 }
 
@@ -44,7 +44,7 @@ func init() {
 	rootCmd.AddCommand(validateCmd)
 }
 
-func validateOne(alias string) error {
+func validateOne(cmd *cobra.Command, alias string) error {
 	entry, err := sshconf.FindEntry(alias)
 	if err != nil {
 		return err
@@ -75,8 +75,13 @@ func validateOne(alias string) error {
 
 	if validateProxy {
 		fmt.Println("  Testing proxy reachability...")
-		// Delegate to test command logic
-		testCmd.RunE(cmd, []string{alias})
+		// Delegate to test command logic via its RunE
+		if err := testCmd.RunE(cmd, []string{alias}); err != nil {
+			fmt.Printf("  ✗ Proxy unreachable: %v
+", err)
+			return err
+		}
+		fmt.Println("  ✓ Proxy reachable")
 	}
 
 	return nil
@@ -97,7 +102,7 @@ func validateAllEntries() error {
 		fmt.Printf("
 --- %s ---
 ", e.Alias)
-		if err := validateOne(e.Alias); err != nil {
+		if err := validateOne(validateCmd, e.Alias); err != nil {
 			failures++
 			if !verboseMode {
 				fmt.Printf("  ✗ Validation failed: %v
