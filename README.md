@@ -11,7 +11,6 @@ Stop leaking your real IP every time you SSH into a server.
 Built for opsec-conscious sysadmins, pentesters, and anyone who cares where their packets come from.
 
 [![CI](https://github.com/Miro-sh/sshady/actions/workflows/ci.yml/badge.svg)](https://github.com/Miro-sh/sshady/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/Miro-sh/sshady)](https://goreportcard.com/report/github.com/Miro-sh/sshady)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
@@ -22,7 +21,12 @@ Built for opsec-conscious sysadmins, pentesters, and anyone who cares where thei
 > Read [SECURITY.md](SECURITY.md) for best practices on credential handling.
 
 **All inputs are validated** to prevent command injection and SSH config injection attacks.
-See [AUDIT.md](AUDIT.md) for the full security audit.
+- Hostnames validated via Go's `net.ParseIP` + strict regex
+- Ports validated to range 1–65535
+- Credentials validated against shell-safe character set
+- Aliases validated against SSH config-safe character set
+
+See [AUDIT.md](AUDIT.md) for the full security audit report.
 
 ---
 
@@ -49,7 +53,7 @@ brew install nmap
 ### From source
 
 ```bash
-git clone https://github.com/Miro-sh/sshady
+git clone https://github.com/Miro-sh/sshady.git
 cd sshady
 make build
 sudo make install
@@ -84,11 +88,33 @@ ssh myserver
 
 ---
 
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `sshady` | Launch the interactive wizard |
+| `sshady create` | Create a new proxy configuration (wizard or flags) |
+| `sshady list` | List all entries managed by sshady |
+| `sshady show <alias>` | Show details of a managed entry |
+| `sshady test <alias>` | Test proxy reachability |
+| `sshady delete <alias>` | Remove a managed entry |
+| `sshady completion <shell>` | Generate shell completion script |
+| `sshady --version` | Show version |
+| `sshady --help` | Show help |
+
+### Global Flags
+
+| Flag | Description |
+|------|-------------|
+| `--dry-run` | Preview changes without modifying the config file |
+| `--force` | Overwrite existing sshady-managed entries without confirmation |
+| `--config <path>` | Use alternative SSH config path (default: `~/.ssh/config`) |
+
+---
+
 ## Usage
 
 ### Interactive wizard
-
-Run `sshady` with no arguments and answer the prompts:
 
 ```bash
 sshady
@@ -97,8 +123,6 @@ sshady
 ![sshady wizard](assets/sshady-1.png)
 
 ### Non-interactive (flags)
-
-Provide `--alias`, `--host`, and `--proxy-type` to skip the wizard entirely:
 
 ```bash
 # SOCKS5 without auth
@@ -110,23 +134,22 @@ sshady create \
   --proxy-host proxy.example.com \
   --proxy-port 1080
 
-# SOCKS5 with auth (use --proxy-pass-file for security!)
-sshady create \
-  --alias myserver \
-  --host 1.2.3.4 \
-  --proxy-type socks5 \
-  --proxy-host proxy.example.com \
-  --proxy-port 1080 \
-  --proxy-user alice \
-  --proxy-pass-file ~/.ssh/proxy-pass
-
-# Or via environment variable (most secure)
+# SOCKS5 with auth via env var (most secure)
 SSHADY_PROXY_PASS=s3cr3t sshady create \
   --alias myserver \
   --host 1.2.3.4 \
   --proxy-type socks5 \
   --proxy-host proxy.example.com \
   --proxy-user alice
+
+# SOCKS5 with auth via file (recommended)
+sshady create \
+  --alias myserver \
+  --host 1.2.3.4 \
+  --proxy-type socks5 \
+  --proxy-host proxy.example.com \
+  --proxy-user alice \
+  --proxy-pass-file ~/.ssh/proxy-pass
 
 # HTTP CONNECT proxy
 sshady create \
@@ -136,53 +159,58 @@ sshady create \
   --proxy-host proxy.example.com \
   --proxy-port 8080
 
-# Tor (no proxy address needed, auto-fills 127.0.0.1:9050)
+# Tor
 sshady create --alias hidden --host 1.2.3.4 --proxy-type tor
 
-# SSH jump host / bastion
+# SSH jump host
 sshady create \
   --alias internal \
   --host 10.0.0.5 \
   --proxy-type jump \
   --jump-host bastion@192.168.1.1
+
+# Preview without writing
+sshady create --alias test --host 1.2.3.4 --proxy-type tor --dry-run
+
+# Overwrite existing entry
+sshady create --alias existing --host 2.3.4.5 --proxy-type tor --force
+
+# Use alternative config file
+sshady create --config /tmp/ssh-config --alias temp --host 1.2.3.4 --proxy-type tor
 ```
 
----
+### Managing entries
 
-## Commands
+```bash
+# List all managed entries
+sshady list
 
-| Command | Description |
-|---------|-------------|
-| `sshady` | Launch the interactive wizard |
-| `sshady create` | Create a new proxy configuration |
-| `sshady create [flags]` | Non-interactive mode |
-| `sshady list` | List all entries managed by sshady |
-| `sshady delete <alias>` | Remove a managed entry |
-| `sshady --version` | Show version |
-| `sshady --help` | Show help |
+# Show details of one entry
+sshady show myserver
 
-### Global Flags
+# Test that the proxy is reachable
+sshady test myserver
+sshady test myserver --timeout 10
 
-| Flag | Description |
-|------|-------------|
-| `--dry-run` | Show what would be written without modifying `~/.ssh/config` |
+# Delete an entry
+sshady delete myserver
+```
 
-### Create Flags
+### Shell completion
 
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--alias` | SSH host alias | required |
-| `--host` | Target hostname or IP | required |
-| `--user` | SSH user | current user |
-| `--port` | SSH port | `22` |
-| `--identity-file` | Path to SSH private key | none |
-| `--proxy-type` | `socks5`, `http`, `tor`, or `jump` | required |
-| `--proxy-host` | Proxy hostname or IP | required for socks5/http |
-| `--proxy-port` | Proxy port | `1080` |
-| `--proxy-user` | Proxy username | none |
-| `--proxy-pass` | Proxy password (**WARNING: visible in ps**) | none |
-| `--proxy-pass-file` | Read proxy password from file (**recommended**) | none |
-| `--jump-host` | Jump host (`user@host`) | required for jump |
+```bash
+# Bash
+source <(sshady completion bash)
+
+# Zsh
+source <(sshady completion zsh)
+
+# Fish
+sshady completion fish | source
+
+# PowerShell
+sshady completion powershell | Out-String | Invoke-Expression
+```
 
 ---
 
@@ -197,9 +225,28 @@ sshady create \
 
 ---
 
+## Create flags
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--alias` | SSH host alias | required |
+| `--host` | Target hostname or IP | required |
+| `--user` | SSH user | current user |
+| `--port` | SSH port | `22` |
+| `--identity-file` | Path to SSH private key | none |
+| `--proxy-type` | `socks5`, `http`, `tor`, or `jump` | required |
+| `--proxy-host` | Proxy hostname or IP | required for socks5/http |
+| `--proxy-port` | Proxy port | `1080` |
+| `--proxy-user` | Proxy username | none |
+| `--proxy-pass` | Proxy password (⚠️ visible in `ps aux`) | none |
+| `--proxy-pass-file` | Read proxy password from file (**recommended**) | none |
+| `--jump-host` | Jump host (`user@host`) | required for jump |
+
+---
+
 ## What gets written to ~/.ssh/config
 
-Each entry is wrapped in marker comments so `sshady list` can track what it manages:
+Each entry is wrapped in marker comments so sshady can track what it manages:
 
 ```
 # BEGIN SSHADY:myserver
@@ -222,12 +269,11 @@ ssh myserver
 
 ## Security notes
 
-- A backup is created at `~/.ssh/config.sshady.bak` before every write.
-- All writes are atomic (temp file + rename, no partial writes).
-- `~/.ssh/config` is always written with `0600` permissions.
-- All user inputs are validated against strict patterns to prevent injection attacks.
-- If you use proxy authentication, credentials are stored in plaintext inside `~/.ssh/config`. Keep that file private and never commit it.
-- Prefer `--proxy-pass-file` or `SSHADY_PROXY_PASS` env var over `--proxy-pass` to avoid exposing credentials in the process list.
+- **Backup rotation**: Up to 5 timestamped backups are kept automatically (`config.sshady.YYYYMMDD-HHMMSS.bak`).
+- **Atomic writes**: All writes use temp-file + fsync + rename — no partial writes possible.
+- **Permissions**: `~/.ssh/config` is always written with `0600`, `~/.ssh/` with `0700`.
+- **Input validation**: Every user-supplied value is validated against strict patterns.
+- **Credentials**: Prefer `--proxy-pass-file` or `SSHADY_PROXY_PASS` over `--proxy-pass`.
 
 Read the full [Security Policy](SECURITY.md) and [Audit Report](AUDIT.md).
 
@@ -235,12 +281,15 @@ Read the full [Security Policy](SECURITY.md) and [Audit Report](AUDIT.md).
 
 ## Development
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and contribution guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
 ```bash
-make build    # Build
-make test     # Run tests with race detector
-make lint     # Run golangci-lint
+make build       # Build binary
+make test        # Run tests with race detector
+make test-short  # Quick tests only
+make lint        # Run golangci-lint
+make cover       # Generate coverage report
+make dist        # Cross-compile for linux/darwin/windows
 ```
 
 ---

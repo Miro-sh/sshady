@@ -19,9 +19,17 @@ var listCmd = &cobra.Command{
 		}
 
 		if len(entries) == 0 {
-			fmt.Println("No entries managed by sshady yet. Run 'sshady create' to add one.")
+			configPath, _ := sshconf.ConfigFilePath()
+			fmt.Printf("No entries managed by sshady in %s.
+", configPath)
+			fmt.Println("Run 'sshady create' to add one.")
 			return nil
 		}
+
+		configPath, _ := sshconf.ConfigFilePath()
+		fmt.Printf("Managed entries in %s:
+
+", configPath)
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 		fmt.Fprintln(w, "ALIAS	HOST	USER	PORT	PROXY")

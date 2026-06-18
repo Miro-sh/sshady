@@ -10,24 +10,38 @@ func TestValidateHost(t *testing.T) {
 		host    string
 		wantErr bool
 	}{
+		// Valid cases
 		{"empty", "", true},
 		{"localhost", "localhost", false},
-		{"valid hostname", "proxy.example.com", false},
-		{"valid IPv4", "192.168.1.1", false},
-		{"valid IPv6", "::1", false},
-		{"valid IPv6 bracketed", "[::1]", false},
-		{"command injection semicolon", "evil;rm -rf /", true},
-		{"command injection pipe", "evil|cat /etc/passwd", true},
-		{"command injection backtick", "evil`id`", true},
-		{"command injection dollar", "evil$(id)", true},
-		{"spaces", "evil host", true},
-		{"newline", "evil\nhost", true},
+		{"simple hostname", "proxy", false},
+		{"fqdn", "proxy.example.com", false},
+		{"long fqdn", "very.long.hostname.with.many.parts.example.com", false},
+		{"hostname with hyphen", "my-proxy.example.com", false},
+		{"IPv4", "192.168.1.1", false},
+		{"IPv4 localhost", "127.0.0.1", false},
+		{"IPv6 loopback", "::1", false},
+		{"IPv6 full", "2001:db8::1", false},
+		{"IPv6 bracketed", "[::1]", false},
+		{"IPv6 bracketed full", "[2001:db8::1]", false},
+		{"IPv4-mapped IPv6", "::ffff:192.0.2.1", false},
+
+		// Injection attempts
+		{"semicolon injection", "evil;rm -rf /", true},
+		{"pipe injection", "evil|cat /etc/passwd", true},
+		{"backtick injection", "evil`id`", true},
+		{"dollar paren injection", "evil$(id)", true},
+		{"newline injection", "evil\nhost", true},
+		{"space injection", "evil host", true},
+		{"ampersand injection", "evil&id", true},
+		{"redirect injection", "evil>/tmp/pwned", true},
+		{"null byte", "evil\x00host", true},
+		{"tab injection", "evil\thost", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateHost(tt.host)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("ValidateHost(%q) error = %v, wantErr %v", tt.host, err, tt.wantErr)
+				t.Errorf("ValidateHost(%q) error = %v, wantErr = %v", tt.host, err, tt.wantErr)
 			}
 		})
 	}
@@ -39,18 +53,28 @@ func TestValidatePort(t *testing.T) {
 		port    string
 		wantErr bool
 	}{
-		{"valid", "1080", false},
+		{"valid 1080", "1080", false},
 		{"valid 22", "22", false},
+		{"valid 1", "1", false},
+		{"valid 65535", "65535", false},
+		{"valid 80", "80", false},
+		{"valid 443", "443", false},
 		{"empty", "", true},
 		{"not numeric", "abc", true},
 		{"negative", "-1", true},
-		{"command injection", "80;id", true},
+		{"zero", "0", true},
+		{"too high", "65536", true},
+		{"way too high", "99999", true},
+		{"float", "80.0", true},
+		{"hex", "0x50", true},
+		{"injection semicolon", "80;id", true},
+		{"injection space", "80 id", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidatePort(tt.port)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("ValidatePort(%q) error = %v, wantErr %v", tt.port, err, tt.wantErr)
+				t.Errorf("ValidatePort(%q) error = %v, wantErr = %v", tt.port, err, tt.wantErr)
 			}
 		})
 	}
@@ -63,21 +87,57 @@ func TestValidateUserPass(t *testing.T) {
 		wantErr bool
 	}{
 		{"empty", "", false},
-		{"valid username", "alice", false},
-		{"valid with underscore", "proxy_user", false},
-		{"valid with dot", "admin.test", false},
-		{"valid with hyphen", "service-account", false},
-		{"valid with at", "user@domain", false},
-		{"injection semicolon", "evil;id", true},
-		{"injection pipe", "evil|id", true},
-		{"injection space", "evil id", true},
-		{"injection newline", "evil\nid", true},
+		{"simple", "alice", false},
+		{"with underscore", "proxy_user", false},
+		{"with dot", "admin.test", false},
+		{"with hyphen", "service-account", false},
+		{"with at", "user@domain", false},
+
+		{"semicolon", "evil;id", true},
+		{"pipe", "evil|id", true},
+		{"space", "evil id", true},
+		{"newline", "evil\nid", true},
+		{"backtick", "evil`id`", true},
+		{"dollar", "evil$(id)", true},
+		{"slash", "evil/id", true},
+		{"backslash", "evil\\id", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateUserPass(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("ValidateUserPass(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+				t.Errorf("ValidateUserPass(%q) error = %v, wantErr = %v", tt.input, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateAlias(t *testing.T) {
+	tests := []struct {
+		name    string
+		alias   string
+		wantErr bool
+	}{
+		{"valid", "myserver", false},
+		{"valid with dot", "my.server", false},
+		{"valid with underscore", "my_server", false},
+		{"valid with hyphen", "my-server", false},
+		{"starts with number", "2server", false},
+
+		{"empty", "", true},
+		{"space", "my server", true},
+		{"newline", "my\nserver", true},
+		{"semicolon", "my;server", true},
+		{"starts with dot", ".myserver", true},
+		{"starts with hyphen", "-myserver", true},
+		{"starts with underscore", "_myserver", true},
+		{"shell injection", "x;id", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateAlias(tt.alias)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateAlias(%q) error = %v, wantErr = %v", tt.alias, err, tt.wantErr)
 			}
 		})
 	}
@@ -89,62 +149,26 @@ func TestConfigValidate(t *testing.T) {
 		cfg     Config
 		wantErr bool
 	}{
-		{
-			name:    "valid SOCKS5",
-			cfg:     Config{Type: TypeSOCKS5, Host: "proxy.example.com", Port: "1080"},
-			wantErr: false,
-		},
-		{
-			name:    "valid SOCKS5 with auth",
-			cfg:     Config{Type: TypeSOCKS5, Host: "proxy.example.com", Port: "1080", Username: "alice", Password: "s3cr3t"},
-			wantErr: false,
-		},
-		{
-			name:    "valid HTTP",
-			cfg:     Config{Type: TypeHTTP, Host: "proxy.example.com", Port: "8080"},
-			wantErr: false,
-		},
-		{
-			name:    "valid Tor",
-			cfg:     Config{Type: TypeTor},
-			wantErr: false,
-		},
-		{
-			name:    "valid Jump",
-			cfg:     Config{Type: TypeJump, JumpHost: "bastion@10.0.0.1"},
-			wantErr: false,
-		},
-		{
-			name:    "invalid type",
-			cfg:     Config{Type: "invalid"},
-			wantErr: true,
-		},
-		{
-			name:    "SOCKS5 missing host",
-			cfg:     Config{Type: TypeSOCKS5, Port: "1080"},
-			wantErr: true,
-		},
-		{
-			name:    "SOCKS5 invalid host",
-			cfg:     Config{Type: TypeSOCKS5, Host: "evil;id", Port: "1080"},
-			wantErr: true,
-		},
-		{
-			name:    "Jump missing host",
-			cfg:     Config{Type: TypeJump},
-			wantErr: true,
-		},
-		{
-			name:    "SOCKS5 invalid port",
-			cfg:     Config{Type: TypeSOCKS5, Host: "proxy.example.com", Port: "abc"},
-			wantErr: true,
-		},
+		{"valid SOCKS5", Config{Type: TypeSOCKS5, Host: "proxy.example.com", Port: "1080"}, false},
+		{"valid SOCKS5 auth", Config{Type: TypeSOCKS5, Host: "proxy.example.com", Port: "1080", Username: "alice", Password: "s3cr3t"}, false},
+		{"valid HTTP", Config{Type: TypeHTTP, Host: "proxy.example.com", Port: "8080"}, false},
+		{"valid Tor", Config{Type: TypeTor}, false},
+		{"valid Jump", Config{Type: TypeJump, JumpHost: "bastion@10.0.0.1"}, false},
+		{"valid Jump no user", Config{Type: TypeJump, JumpHost: "10.0.0.1"}, false},
+		{"invalid type", Config{Type: "invalid"}, true},
+		{"SOCKS5 missing host", Config{Type: TypeSOCKS5, Port: "1080"}, true},
+		{"SOCKS5 bad host", Config{Type: TypeSOCKS5, Host: "evil;id", Port: "1080"}, true},
+		{"SOCKS5 bad port", Config{Type: TypeSOCKS5, Host: "proxy.example.com", Port: "abc"}, true},
+		{"SOCKS5 port 0", Config{Type: TypeSOCKS5, Host: "proxy.example.com", Port: "0"}, true},
+		{"SOCKS5 port 65536", Config{Type: TypeSOCKS5, Host: "proxy.example.com", Port: "65536"}, true},
+		{"Jump missing host", Config{Type: TypeJump}, true},
+		{"Jump bad user", Config{Type: TypeJump, JumpHost: "evil;id@host"}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.cfg.Validate()
 			if (err != nil) != tt.wantErr {
-				t.Errorf("Config.Validate() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("Config.Validate() error = %v, wantErr = %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -157,29 +181,29 @@ func TestProxyCommand(t *testing.T) {
 		want string
 	}{
 		{
-			name: "SOCKS5 no auth",
-			cfg:  Config{Type: TypeSOCKS5, Host: "proxy.example.com", Port: "1080"},
-			want: "ncat --proxy-type socks5 --proxy proxy.example.com:1080 %h %p",
+			"SOCKS5 no auth",
+			Config{Type: TypeSOCKS5, Host: "proxy.example.com", Port: "1080"},
+			"ncat --proxy-type socks5 --proxy proxy.example.com:1080 %h %p",
 		},
 		{
-			name: "SOCKS5 with auth",
-			cfg:  Config{Type: TypeSOCKS5, Host: "proxy.example.com", Port: "1080", Username: "alice", Password: "s3cr3t"},
-			want: "ncat --proxy-type socks5 --proxy proxy.example.com:1080 --proxy-auth alice:s3cr3t %h %p",
+			"SOCKS5 with auth",
+			Config{Type: TypeSOCKS5, Host: "proxy.example.com", Port: "1080", Username: "alice", Password: "s3cr3t"},
+			"ncat --proxy-type socks5 --proxy proxy.example.com:1080 --proxy-auth alice:s3cr3t %h %p",
 		},
 		{
-			name: "HTTP no auth",
-			cfg:  Config{Type: TypeHTTP, Host: "proxy.example.com", Port: "8080"},
-			want: "ncat --proxy-type http --proxy proxy.example.com:8080 %h %p",
+			"HTTP",
+			Config{Type: TypeHTTP, Host: "proxy.example.com", Port: "8080"},
+			"ncat --proxy-type http --proxy proxy.example.com:8080 %h %p",
 		},
 		{
-			name: "Tor",
-			cfg:  Config{Type: TypeTor},
-			want: "ncat --proxy-type socks5 --proxy 127.0.0.1:9050 %h %p",
+			"Tor",
+			Config{Type: TypeTor},
+			"ncat --proxy-type socks5 --proxy 127.0.0.1:9050 %h %p",
 		},
 		{
-			name: "Jump returns empty",
-			cfg:  Config{Type: TypeJump, JumpHost: "bastion"},
-			want: "",
+			"Jump returns empty",
+			Config{Type: TypeJump, JumpHost: "bastion"},
+			"",
 		},
 	}
 	for _, tt := range tests {
@@ -193,10 +217,75 @@ func TestProxyCommand(t *testing.T) {
 }
 
 func TestSummary(t *testing.T) {
-	cfg := Config{Type: TypeSOCKS5, Host: "proxy.example.com", Port: "1080", Username: "alice"}
-	got := cfg.Summary()
-	want := "SOCKS5 via proxy.example.com:1080 (authenticated)"
-	if got != want {
-		t.Errorf("Summary() = %q, want %q", got, want)
+	tests := []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{"SOCKS5 no auth", Config{Type: TypeSOCKS5, Host: "p:1080"}, "SOCKS5 via p:1080"},
+		{"SOCKS5 auth", Config{Type: TypeSOCKS5, Host: "p:1080", Username: "a"}, "SOCKS5 via p:1080 (authenticated)"},
+		{"HTTP", Config{Type: TypeHTTP, Host: "p:8080"}, "HTTP CONNECT via p:8080"},
+		{"Tor", Config{Type: TypeTor}, "Tor (127.0.0.1:9050)"},
+		{"Jump", Config{Type: TypeJump, JumpHost: "b@h"}, "SSH Jump -> b@h"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.cfg.Summary()
+			if got != tt.want {
+				t.Errorf("Summary() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// Fuzz tests
+func FuzzValidateHost(f *testing.F) {
+	seeds := []string{"", "localhost", "example.com", "192.168.1.1", "::1", "evil;id", "x\nx"}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		// Must never panic
+		_ = ValidateHost(s)
+	})
+}
+
+func FuzzValidatePort(f *testing.F) {
+	seeds := []string{"", "0", "22", "1080", "65535", "65536", "abc", "80;id"}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		_ = ValidatePort(s)
+	})
+}
+
+func FuzzValidateUserPass(f *testing.F) {
+	seeds := []string{"", "alice", "evil;id", "x\nx", "x y"}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		_ = ValidateUserPass(s)
+	})
+}
+
+// Benchmarks
+func BenchmarkValidateHost(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		ValidateHost("proxy.example.com")
+	}
+}
+
+func BenchmarkValidatePort(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		ValidatePort("1080")
+	}
+}
+
+func BenchmarkProxyCommand(b *testing.B) {
+	cfg := Config{Type: TypeSOCKS5, Host: "proxy.example.com", Port: "1080", Username: "alice", Password: "s3cr3t"}
+	for i := 0; i < b.N; i++ {
+		_ = cfg.ProxyCommand()
 	}
 }

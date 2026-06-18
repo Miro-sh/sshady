@@ -10,14 +10,16 @@ import (
 var deleteCmd = &cobra.Command{
 	Use:   "delete <alias>",
 	Short: "Remove an SSH config managed by sshady",
-	Long: `Remove an sshady-managed entry from ~/.ssh/config by its alias.
-A backup is automatically created at ~/.ssh/config.sshady.bak.`,
+	Long: `Remove an sshady-managed entry from the SSH config file by its alias.
+
+A timestamped backup is automatically created before removal.
+Use --dry-run to preview without modifying the config.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		alias := args[0]
 
 		if dryRun {
-			fmt.Printf("[DRY RUN] Would remove alias %q from ~/.ssh/config
+			fmt.Printf("[DRY RUN] Would remove alias %q from SSH config
 ", alias)
 			return nil
 		}
@@ -26,9 +28,10 @@ A backup is automatically created at ~/.ssh/config.sshady.bak.`,
 			return err
 		}
 
-		fmt.Printf("Removed 'Host %s' from ~/.ssh/config
-", alias)
-		fmt.Println("A backup was saved to ~/.ssh/config.sshady.bak")
+		configPath, _ := sshconf.ConfigFilePath()
+		fmt.Printf("✓ Removed 'Host %s' from %s
+", alias, configPath)
+		fmt.Println("  A timestamped backup was saved.")
 		return nil
 	},
 }
