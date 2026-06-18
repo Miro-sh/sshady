@@ -15,6 +15,27 @@ Built for opsec-conscious sysadmins, pentesters, and anyone who cares where thei
 
 ---
 
+## Contents
+
+- [Security](#security)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Commands](#commands)
+- [Usage](#usage)
+  - [Interactive wizard](#interactive-wizard)
+  - [Non-interactive (flags)](#non-interactive-flags)
+  - [Managing entries](#managing-entries)
+  - [Shell completion](#shell-completion)
+- [Proxy Types](#supported-proxy-types)
+- [Create Flags](#create-flags)
+- [Config Format](#what-gets-written-to-sshconfig)
+- [Security Notes](#security-notes)
+- [Development](#development)
+- [License](#license)
+
+---
+
 ## Security
 
 > **This tool stores proxy credentials in plaintext inside `~/.ssh/config` (with `0600` permissions).**  
@@ -82,6 +103,9 @@ sshady create \
   --proxy-host proxy.example.com \
   --proxy-port 1080
 
+# Check it works
+sshady validate myserver --test-proxy
+
 # Connect!
 ssh myserver
 ```
@@ -96,7 +120,8 @@ ssh myserver
 | `sshady create` | Create a new proxy configuration (wizard or flags) |
 | `sshady list` | List all entries managed by sshady |
 | `sshady show <alias>` | Show details of a managed entry |
-| `sshady test <alias>` | Test proxy reachability |
+| `sshady validate <alias>` | Validate config syntax and proxy reachability |
+| `sshady test <alias>` | Test proxy TCP reachability |
 | `sshady delete <alias>` | Remove a managed entry |
 | `sshady completion <shell>` | Generate shell completion script |
 | `sshady --version` | Show version |
@@ -109,6 +134,8 @@ ssh myserver
 | `--dry-run` | Preview changes without modifying the config file |
 | `--force` | Overwrite existing sshady-managed entries without confirmation |
 | `--config <path>` | Use alternative SSH config path (default: `~/.ssh/config`) |
+| `--quiet`, `-q` | Suppress non-error output |
+| `--verbose`, `-v` | Enable verbose diagnostic output |
 
 ---
 
@@ -153,14 +180,14 @@ sshady create \
 
 # HTTP CONNECT proxy
 sshady create \
-  --alias myserver \
-  --host 1.2.3.4 \
+  --alias web \
+  --host 10.0.0.5 \
   --proxy-type http \
   --proxy-host proxy.example.com \
   --proxy-port 8080
 
 # Tor
-sshady create --alias hidden --host 1.2.3.4 --proxy-type tor
+sshady create --alias hidden --host example.onion --proxy-type tor
 
 # SSH jump host
 sshady create \
@@ -168,32 +195,35 @@ sshady create \
   --host 10.0.0.5 \
   --proxy-type jump \
   --jump-host bastion@192.168.1.1
-
-# Preview without writing
-sshady create --alias test --host 1.2.3.4 --proxy-type tor --dry-run
-
-# Overwrite existing entry
-sshady create --alias existing --host 2.3.4.5 --proxy-type tor --force
-
-# Use alternative config file
-sshady create --config /tmp/ssh-config --alias temp --host 1.2.3.4 --proxy-type tor
 ```
 
 ### Managing entries
 
 ```bash
-# List all managed entries
+# List all
 sshady list
 
-# Show details of one entry
+# Show details
 sshady show myserver
 
-# Test that the proxy is reachable
-sshady test myserver
+# Validate config syntax + proxy
+sshady validate myserver --test-proxy
+sshady validate --all
+
+# Test proxy
 sshady test myserver --timeout 10
 
-# Delete an entry
+# Delete
 sshady delete myserver
+
+# Preview with dry-run
+sshady create --alias test --host 1.2.3.4 --proxy-type tor --dry-run
+
+# Scripting with --quiet
+sshady create -q --alias srv --host 1.2.3.4 --proxy-type tor
+
+# Verbose diagnostics
+sshady test myserver -v
 ```
 
 ### Shell completion
@@ -274,6 +304,7 @@ ssh myserver
 - **Permissions**: `~/.ssh/config` is always written with `0600`, `~/.ssh/` with `0700`.
 - **Input validation**: Every user-supplied value is validated against strict patterns.
 - **Credentials**: Prefer `--proxy-pass-file` or `SSHADY_PROXY_PASS` over `--proxy-pass`.
+- **Runtime checks**: `sshady validate` runs `ssh -G` to verify config syntax. `sshady test` verifies proxy reachability.
 
 Read the full [Security Policy](SECURITY.md) and [Audit Report](AUDIT.md).
 
@@ -290,6 +321,26 @@ make test-short  # Quick tests only
 make lint        # Run golangci-lint
 make cover       # Generate coverage report
 make dist        # Cross-compile for linux/darwin/windows
+```
+
+### Architecture
+
+```
+sshady/
+├── main.go                   # Entry point, ldflags version injection
+├── cmd/                      # CLI commands (cobra)
+│   ├── root.go               # Global flags, config override
+│   ├── create.go             # Wizard + non-interactive creation
+│   ├── list.go, show.go      # Read operations
+│   ├── validate.go           # ssh -G syntax check + proxy test
+│   ├── test.go               # ncat TCP reachability check
+│   ├── delete.go             # Remove with backup rotation
+│   └── completion.go         # Shell completion generation
+├── internal/
+│   ├── proxy/                # Proxy types, validation, command generation
+│   ├── sshconf/              # SSH config I/O, atomic writes, backup rotation
+│   └── check/                # Runtime prerequisite checks (ncat, Tor)
+└── .github/workflows/        # CI/CD (lint, test, security scan, release)
 ```
 
 ---

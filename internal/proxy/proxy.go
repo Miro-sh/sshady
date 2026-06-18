@@ -1,3 +1,37 @@
+
+// ── Structured error types ─────────────────────────────────
+
+// ValidationError represents an input validation failure.
+type ValidationError struct {
+	Field   string // Which field failed validation
+	Value   string // The invalid value (may be truncated)
+	Reason  string // Human-readable reason
+}
+
+func (e *ValidationError) Error() string {
+	return fmt.Sprintf("validation error in %s: %s", e.Field, e.Reason)
+}
+
+// ErrInvalidHost is returned when a hostname/IP fails validation.
+func ErrInvalidHost(host string, reason string) error {
+	return &ValidationError{Field: "host", Value: host, Reason: reason}
+}
+
+// ErrInvalidPort is returned when a port fails validation.
+func ErrInvalidPort(port string, reason string) error {
+	return &ValidationError{Field: "port", Value: port, Reason: reason}
+}
+
+// ErrInvalidAlias is returned when an SSH alias fails validation.
+func ErrInvalidAlias(alias string, reason string) error {
+	return &ValidationError{Field: "alias", Value: alias, Reason: reason}
+}
+
+// ErrInvalidCredential is returned when a username/password fails validation.
+func ErrInvalidCredential(field, reason string) error {
+	return &ValidationError{Field: field, Value: "***", Reason: reason}
+}
+
 // Package proxy defines proxy types, configuration, and security validation.
 // All user-supplied values are validated against strict patterns to prevent
 // command injection in the generated ncat ProxyCommand directives.

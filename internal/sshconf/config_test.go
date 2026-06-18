@@ -261,3 +261,21 @@ func contains(s, substr string) bool {
 	}
 	return false
 }
+
+// Example tests for sshconf package.
+
+func ExampleHostConfig_Block() {
+	cfg := HostConfig{
+		Alias: "example", HostName: "10.0.0.1", User: "admin", Port: "22",
+		Proxy: proxy.Config{Type: proxy.TypeTor},
+	}
+	block := cfg.Block()
+	// Verify key elements are present
+	fmt.Println(contains(block, "# BEGIN SSHADY:example"))
+	fmt.Println(contains(block, "Host example"))
+	fmt.Println(contains(block, "ProxyCommand ncat"))
+	// Output:
+	// true
+	// true
+	// true
+}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
+
 	"sshady/internal/proxy"
 	"sshady/internal/sshconf"
 )
@@ -36,10 +37,31 @@ Without flags, launches the interactive wizard.
 Provide --alias, --host, and --proxy-type to skip the wizard.
 
 For proxy passwords, use --proxy-pass-file (reads from file) or set the
-SSHADY_PROXY_PASS environment variable. Using --proxy-pass on the command line
-exposes the password in the process list (visible via ps aux).`,
+SSHADY_PROXY_PASS environment variable. Avoid --proxy-pass on the command line
+as it exposes the password in the process list (visible via ps aux).`,
+	Example: `  # Interactive wizard
+  sshady create
+
+  # SOCKS5 proxy (password via environment variable — most secure)
+  SSHADY_PROXY_PASS=s3cr3t sshady create \
+    --alias myserver --host 1.2.3.4 --user admin \
+    --proxy-type socks5 --proxy-host proxy.example.com --proxy-user alice
+
+  # HTTP CONNECT proxy
+  sshady create --alias web --host 10.0.0.5 \
+    --proxy-type http --proxy-host proxy.example.com --proxy-port 8080
+
+  # Tor routing
+  sshady create --alias hidden --host example.onion --proxy-type tor
+
+  # SSH jump host (bastion)
+  sshady create --alias internal --host 10.0.0.5 \
+    --proxy-type jump --jump-host bastion@192.168.1.1
+
+  # Dry-run to preview
+  sshady create --alias test --host 1.2.3.4 --proxy-type tor --dry-run`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Resolve password priority: env var < file < flag
+		// Resolve password: env var < file < flag
 		if createFlags.proxyPass == "" {
 			if envPass := os.Getenv("SSHADY_PROXY_PASS"); envPass != "" {
 				createFlags.proxyPass = envPass
@@ -50,7 +72,8 @@ exposes the password in the process list (visible via ps aux).`,
 			if err != nil {
 				return fmt.Errorf("cannot read proxy password file %q: %w", createFlags.proxyPassFile, err)
 			}
-			createFlags.proxyPass = strings.TrimRight(string(data), "\r\n")
+			createFlags.proxyPass = strings.TrimRight(string(data), "
+")
 		}
 
 		if createFlags.alias != "" && createFlags.host != "" && createFlags.proxyType != "" {
@@ -86,8 +109,6 @@ func currentUser() string {
 	return ""
 }
 
-
-
 func runWizard() error {
 	fmt.Println()
 	fmt.Println("  sshady — SSH proxy config generator")
@@ -109,7 +130,7 @@ func runWizard() error {
 			Name: "Alias",
 			Prompt: &survey.Input{
 				Message: "Host alias (e.g. myserver):",
-				Help:    "A short, memorable name to use with 'ssh <alias>'. Alphanumeric, dots, underscores, hyphens only.",
+				Help:    "A short, memorable name for 'ssh <alias>'. Alphanumeric, dots, underscores, hyphens only.",
 			},
 			Validate: survey.ComposeValidators(survey.Required, validateAliasField),
 		},
@@ -126,7 +147,7 @@ func runWizard() error {
 			Prompt: &survey.Input{
 				Message: "SSH user:",
 				Default: cu,
-				Help:    "The username to use for SSH authentication on the target server.",
+				Help:    "The username for SSH authentication on the target server.",
 			},
 			Validate: survey.ComposeValidators(survey.Required, validateUserPassField),
 		},
@@ -166,89 +187,9 @@ func runWizard() error {
 		return fmt.Errorf("wizard cancelled: %w", err)
 	}
 
-	proxyCfg := proxy.Config{}
-
-	switch base.ProxyType {
-	case "SOCKS5", "HTTP CONNECT":
-		var proxyAnswers struct {
-			ProxyHost string
-			ProxyPort string
-			ProxyAuth bool
-			ProxyUser string
-			ProxyPass string
-		}
-
-		proxyQ := []*survey.Question{
-			{
-				Name:     "ProxyHost",
-				Prompt:   &survey.Input{Message: "Proxy host:", Help: "Hostname or IP of your SOCKS5/HTTP proxy server."},
-				Validate: survey.ComposeValidators(survey.Required, validateHostField),
-			},
-			{
-				Name: "ProxyPort",
-				Prompt: &survey.Input{
-					Message: "Proxy port:",
-					Default: "1080",
-					Help:    "Port your proxy server listens on (default: 1080).",
-				},
-				Validate: validatePortField,
-			},
-			{
-				Name:   "ProxyAuth",
-				Prompt: &survey.Confirm{Message: "Authentication required?", Default: false, Help: "Does your proxy require a username and password?"},
-			},
-		}
-		if err := survey.Ask(proxyQ, &proxyAnswers); err != nil {
-			return fmt.Errorf("wizard cancelled: %w", err)
-		}
-
-		if proxyAnswers.ProxyAuth {
-			authQ := []*survey.Question{
-				{
-					Name:     "ProxyUser",
-					Prompt:   &survey.Input{Message: "Proxy username:"},
-					Validate: survey.ComposeValidators(survey.Required, validateUserPassField),
-				},
-				{
-					Name:     "ProxyPass",
-					Prompt:   &survey.Password{Message: "Proxy password:"},
-					Validate: survey.Required,
-				},
-			}
-			if err := survey.Ask(authQ, &proxyAnswers); err != nil {
-				return fmt.Errorf("wizard cancelled: %w", err)
-			}
-		}
-
-		pType := proxy.TypeSOCKS5
-		if base.ProxyType == "HTTP CONNECT" {
-			pType = proxy.TypeHTTP
-		}
-		proxyCfg = proxy.Config{
-			Type:     pType,
-			Host:     proxyAnswers.ProxyHost,
-			Port:     proxyAnswers.ProxyPort,
-			Username: proxyAnswers.ProxyUser,
-			Password: proxyAnswers.ProxyPass,
-		}
-
-	case "Tor (auto: 127.0.0.1:9050)":
-		proxyCfg = proxy.Config{Type: proxy.TypeTor}
-
-	case "SSH Jump Host":
-		var jumpAnswer struct {
-			JumpHost string
-		}
-		if err := survey.Ask([]*survey.Question{
-			{
-				Name:     "JumpHost",
-				Prompt:   &survey.Input{Message: "Jump host (user@host or host):", Help: "Format: user@bastion-host or just bastion-host."},
-				Validate: survey.Required,
-			},
-		}, &jumpAnswer); err != nil {
-			return fmt.Errorf("wizard cancelled: %w", err)
-		}
-		proxyCfg = proxy.Config{Type: proxy.TypeJump, JumpHost: jumpAnswer.JumpHost}
+	proxyCfg, err := buildProxyConfigFromWizard(base)
+	if err != nil {
+		return err
 	}
 
 	cfg := sshconf.HostConfig{
@@ -260,12 +201,10 @@ func runWizard() error {
 		Proxy:        proxyCfg,
 	}
 
-	// Validate early
 	if err := sshconf.ValidateHostConfig(cfg); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
 
-	// Show summary
 	fmt.Println()
 	fmt.Println("  Summary:")
 	fmt.Printf("    Host %-15s ->  %s (user: %s, port: %s)\n", cfg.Alias, cfg.HostName, cfg.User, cfg.Port)
@@ -283,13 +222,15 @@ func runWizard() error {
 		return nil
 	}
 
-	var confirm bool
-	if err := survey.AskOne(&survey.Confirm{
-		Message: "Write to SSH config?",
-		Default: true,
-	}, &confirm); err != nil || !confirm {
-		fmt.Println("Aborted.")
-		return nil
+	if !quietMode {
+		var confirm bool
+		if err := survey.AskOne(&survey.Confirm{
+			Message: "Write to SSH config?",
+			Default: true,
+		}, &confirm); err != nil || !confirm {
+			fmt.Println("Aborted.")
+			return nil
+		}
 	}
 
 	if err := sshconf.WriteEntry(cfg, forceWrite); err != nil {
@@ -299,6 +240,93 @@ func runWizard() error {
 	fmt.Printf("\n✓ Added 'Host %s' to SSH config\n", cfg.Alias)
 	fmt.Printf("  Connect with:  ssh %s\n\n", cfg.Alias)
 	return nil
+}
+
+// buildProxyConfigFromWizard handles the proxy-specific wizard prompts.
+func buildProxyConfigFromWizard(base struct {
+	Alias        string
+	HostName     string
+	User         string
+	Port         string
+	IdentityFile string
+	ProxyType    string
+}) (proxy.Config, error) {
+	switch base.ProxyType {
+	case "SOCKS5", "HTTP CONNECT":
+		var pa struct {
+			ProxyHost string
+			ProxyPort string
+			ProxyAuth bool
+			ProxyUser string
+			ProxyPass string
+		}
+		pq := []*survey.Question{
+			{
+				Name:     "ProxyHost",
+				Prompt:   &survey.Input{Message: "Proxy host:", Help: "Hostname or IP of your proxy server."},
+				Validate: survey.ComposeValidators(survey.Required, validateHostField),
+			},
+			{
+				Name: "ProxyPort",
+				Prompt: &survey.Input{
+					Message: "Proxy port:",
+					Default: "1080",
+					Help:    "Port the proxy listens on.",
+				},
+				Validate: validatePortField,
+			},
+			{
+				Name:   "ProxyAuth",
+				Prompt: &survey.Confirm{Message: "Authentication required?", Default: false},
+			},
+		}
+		if err := survey.Ask(pq, &pa); err != nil {
+			return proxy.Config{}, fmt.Errorf("wizard cancelled: %w", err)
+		}
+		if pa.ProxyAuth {
+			aq := []*survey.Question{
+				{
+					Name:     "ProxyUser",
+					Prompt:   &survey.Input{Message: "Proxy username:"},
+					Validate: survey.ComposeValidators(survey.Required, validateUserPassField),
+				},
+				{
+					Name:     "ProxyPass",
+					Prompt:   &survey.Password{Message: "Proxy password:"},
+					Validate: survey.Required,
+				},
+			}
+			if err := survey.Ask(aq, &pa); err != nil {
+				return proxy.Config{}, fmt.Errorf("wizard cancelled: %w", err)
+			}
+		}
+		pType := proxy.TypeSOCKS5
+		if base.ProxyType == "HTTP CONNECT" {
+			pType = proxy.TypeHTTP
+		}
+		return proxy.Config{
+			Type: pType, Host: pa.ProxyHost, Port: pa.ProxyPort,
+			Username: pa.ProxyUser, Password: pa.ProxyPass,
+		}, nil
+
+	case "Tor (auto: 127.0.0.1:9050)":
+		if verboseMode {
+			fmt.Println("  Checking if Tor is running on 127.0.0.1:9050...")
+		}
+		return proxy.Config{Type: proxy.TypeTor}, nil
+
+	case "SSH Jump Host":
+		var ja struct{ JumpHost string }
+		if err := survey.Ask([]*survey.Question{{
+			Name:     "JumpHost",
+			Prompt:   &survey.Input{Message: "Jump host (user@host or host):", Help: "Format: user@bastion-host"},
+			Validate: survey.Required,
+		}}, &ja); err != nil {
+			return proxy.Config{}, fmt.Errorf("wizard cancelled: %w", err)
+		}
+		return proxy.Config{Type: proxy.TypeJump, JumpHost: ja.JumpHost}, nil
+	}
+	return proxy.Config{}, fmt.Errorf("unknown proxy type selected")
 }
 
 func runNonInteractive() error {
@@ -321,22 +349,16 @@ func runNonInteractive() error {
 			return fmt.Errorf("--proxy-host is required for proxy type 'socks5'")
 		}
 		cfg.Proxy = proxy.Config{
-			Type:     proxy.TypeSOCKS5,
-			Host:     createFlags.proxyHost,
-			Port:     createFlags.proxyPort,
-			Username: createFlags.proxyUser,
-			Password: createFlags.proxyPass,
+			Type: proxy.TypeSOCKS5, Host: createFlags.proxyHost, Port: createFlags.proxyPort,
+			Username: createFlags.proxyUser, Password: createFlags.proxyPass,
 		}
 	case "http":
 		if createFlags.proxyHost == "" {
 			return fmt.Errorf("--proxy-host is required for proxy type 'http'")
 		}
 		cfg.Proxy = proxy.Config{
-			Type:     proxy.TypeHTTP,
-			Host:     createFlags.proxyHost,
-			Port:     createFlags.proxyPort,
-			Username: createFlags.proxyUser,
-			Password: createFlags.proxyPass,
+			Type: proxy.TypeHTTP, Host: createFlags.proxyHost, Port: createFlags.proxyPort,
+			Username: createFlags.proxyUser, Password: createFlags.proxyPass,
 		}
 	case "tor":
 		cfg.Proxy = proxy.Config{Type: proxy.TypeTor}
@@ -365,12 +387,14 @@ func runNonInteractive() error {
 		return err
 	}
 
-	fmt.Printf("✓ Added 'Host %s' to SSH config\n", cfg.Alias)
-	fmt.Printf("  Connect with:  ssh %s\n", cfg.Alias)
+	if !quietMode {
+		fmt.Printf("✓ Added 'Host %s' to SSH config\n", cfg.Alias)
+		fmt.Printf("  Connect with:  ssh %s\n", cfg.Alias)
+	}
 	return nil
 }
 
-// ── Wizard validators (wrapping proxy package for survey) ──
+// ── Wizard validators ─────────────────────────────────────
 
 func validateAliasField(val interface{}) error {
 	s, ok := val.(string)
@@ -394,7 +418,7 @@ func validatePortField(val interface{}) error {
 		return fmt.Errorf("expected string")
 	}
 	if s == "" {
-		return nil // optional, default will be used
+		return nil
 	}
 	return proxy.ValidatePort(s)
 }

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -288,4 +289,34 @@ func BenchmarkProxyCommand(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = cfg.ProxyCommand()
 	}
+}
+
+// Example tests — serve as documentation and are verified by 'go test'.
+
+func ExampleValidateHost() {
+	fmt.Println(ValidateHost("example.com"))
+	fmt.Println(ValidateHost("evil;rm -rf /"))
+	// Output:
+	// <nil>
+	// invalid host "evil;rm -rf /": must be a valid hostname, IPv4, or IPv6 address
+}
+
+func ExampleValidatePort() {
+	fmt.Println(ValidatePort("1080"))
+	fmt.Println(ValidatePort("0"))
+	// Output:
+	// <nil>
+	// invalid port "0": must be between 1 and 65535
+}
+
+func ExampleConfig_ProxyCommand() {
+	cfg := Config{Type: TypeSOCKS5, Host: "proxy.example.com", Port: "1080"}
+	fmt.Println(cfg.ProxyCommand())
+	// Output: ncat --proxy-type socks5 --proxy proxy.example.com:1080 %h %p
+}
+
+func ExampleConfig_Summary() {
+	cfg := Config{Type: TypeSOCKS5, Host: "proxy.example.com", Port: "1080", Username: "alice"}
+	fmt.Println(cfg.Summary())
+	// Output: SOCKS5 via proxy.example.com:1080 (authenticated)
 }
