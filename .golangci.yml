@@ -1,0 +1,37 @@
+run:
+  timeout: 3m
+  tests: true
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofmt
+    - goimports
+    - misspell
+    - unconvert
+    - unparam
+    - gosec
+    - bodyclose
+    - noctx
+    - prealloc
+    - whitespace
+
+linters-settings:
+  gosec:
+    severity: medium
+    confidence: medium
+    excludes:
+      - G204  # Subprocess launched with variable (we validate inputs)
+  misspell:
+    locale: US
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-use-default: false

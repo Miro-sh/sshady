@@ -6,9 +6,23 @@
 
 Stop leaking your real IP every time you SSH into a server.
 
-`sshady` generates SSH proxy configs and writes them straight to `~/.ssh/config`. One wizard, one alias, your traffic routes through SOCKS5 / HTTP / Tor / jump host -- the target sees the proxy, not you.
+`sshady` generates SSH proxy configs and writes them straight to `~/.ssh/config`. One wizard, one alias, your traffic routes through SOCKS5 / HTTP / Tor / jump host — the target sees the proxy, not you.
 
 Built for opsec-conscious sysadmins, pentesters, and anyone who cares where their packets come from.
+
+[![CI](https://github.com/Miro-sh/sshady/actions/workflows/ci.yml/badge.svg)](https://github.com/Miro-sh/sshady/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Miro-sh/sshady)](https://goreportcard.com/report/github.com/Miro-sh/sshady)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+---
+
+## Security
+
+> **This tool stores proxy credentials in plaintext inside `~/.ssh/config` (with `0600` permissions).**  
+> Read [SECURITY.md](SECURITY.md) for best practices on credential handling.
+
+**All inputs are validated** to prevent command injection and SSH config injection attacks.
+See [AUDIT.md](AUDIT.md) for the full security audit.
 
 ---
 
@@ -32,11 +46,40 @@ brew install nmap
 
 ## Installation
 
+### From source
+
 ```bash
-git clone https://git.empmi.ro/miro/sshady
+git clone https://github.com/Miro-sh/sshady
 cd sshady
-go build -o sshady .
-sudo mv sshady /usr/local/bin/
+make build
+sudo make install
+```
+
+### Using `go install`
+
+```bash
+go install github.com/Miro-sh/sshady@latest
+```
+
+---
+
+## Quick Start
+
+```bash
+# Launch the interactive wizard
+sshady
+
+# Or use flags for scripting
+sshady create \
+  --alias myserver \
+  --host 1.2.3.4 \
+  --user admin \
+  --proxy-type socks5 \
+  --proxy-host proxy.example.com \
+  --proxy-port 1080
+
+# Connect!
+ssh myserver
 ```
 
 ---
@@ -67,7 +110,7 @@ sshady create \
   --proxy-host proxy.example.com \
   --proxy-port 1080
 
-# SOCKS5 with auth
+# SOCKS5 with auth (use --proxy-pass-file for security!)
 sshady create \
   --alias myserver \
   --host 1.2.3.4 \
@@ -75,7 +118,15 @@ sshady create \
   --proxy-host proxy.example.com \
   --proxy-port 1080 \
   --proxy-user alice \
-  --proxy-pass s3cr3t
+  --proxy-pass-file ~/.ssh/proxy-pass
+
+# Or via environment variable (most secure)
+SSHADY_PROXY_PASS=s3cr3t sshady create \
+  --alias myserver \
+  --host 1.2.3.4 \
+  --proxy-type socks5 \
+  --proxy-host proxy.example.com \
+  --proxy-user alice
 
 # HTTP CONNECT proxy
 sshady create \
@@ -95,6 +146,43 @@ sshady create \
   --proxy-type jump \
   --jump-host bastion@192.168.1.1
 ```
+
+---
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `sshady` | Launch the interactive wizard |
+| `sshady create` | Create a new proxy configuration |
+| `sshady create [flags]` | Non-interactive mode |
+| `sshady list` | List all entries managed by sshady |
+| `sshady delete <alias>` | Remove a managed entry |
+| `sshady --version` | Show version |
+| `sshady --help` | Show help |
+
+### Global Flags
+
+| Flag | Description |
+|------|-------------|
+| `--dry-run` | Show what would be written without modifying `~/.ssh/config` |
+
+### Create Flags
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--alias` | SSH host alias | required |
+| `--host` | Target hostname or IP | required |
+| `--user` | SSH user | current user |
+| `--port` | SSH port | `22` |
+| `--identity-file` | Path to SSH private key | none |
+| `--proxy-type` | `socks5`, `http`, `tor`, or `jump` | required |
+| `--proxy-host` | Proxy hostname or IP | required for socks5/http |
+| `--proxy-port` | Proxy port | `1080` |
+| `--proxy-user` | Proxy username | none |
+| `--proxy-pass` | Proxy password (**WARNING: visible in ps**) | none |
+| `--proxy-pass-file` | Read proxy password from file (**recommended**) | none |
+| `--jump-host` | Jump host (`user@host`) | required for jump |
 
 ---
 
@@ -132,37 +220,31 @@ ssh myserver
 
 ---
 
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `sshady` | Launch the interactive wizard |
-| `sshady create` | Same as above (explicit subcommand) |
-| `sshady create [flags]` | Non-interactive mode, see flags below |
-| `sshady list` | List all entries managed by sshady |
-| `sshady --help` | Show help |
-
-### create flags
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--alias` | SSH host alias | required |
-| `--host` | Target hostname or IP | required |
-| `--user` | SSH user | current user |
-| `--port` | SSH port | `22` |
-| `--identity-file` | Path to SSH private key | none |
-| `--proxy-type` | `socks5`, `http`, `tor`, or `jump` | required |
-| `--proxy-host` | Proxy hostname or IP | required for socks5/http |
-| `--proxy-port` | Proxy port | `1080` |
-| `--proxy-user` | Proxy username | none |
-| `--proxy-pass` | Proxy password | none |
-| `--jump-host` | Jump host (`user@host`) | required for jump |
-
----
-
 ## Security notes
 
 - A backup is created at `~/.ssh/config.sshady.bak` before every write.
 - All writes are atomic (temp file + rename, no partial writes).
 - `~/.ssh/config` is always written with `0600` permissions.
+- All user inputs are validated against strict patterns to prevent injection attacks.
 - If you use proxy authentication, credentials are stored in plaintext inside `~/.ssh/config`. Keep that file private and never commit it.
+- Prefer `--proxy-pass-file` or `SSHADY_PROXY_PASS` env var over `--proxy-pass` to avoid exposing credentials in the process list.
+
+Read the full [Security Policy](SECURITY.md) and [Audit Report](AUDIT.md).
+
+---
+
+## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and contribution guidelines.
+
+```bash
+make build    # Build
+make test     # Run tests with race detector
+make lint     # Run golangci-lint
+```
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).

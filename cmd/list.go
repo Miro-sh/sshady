@@ -24,10 +24,11 @@ var listCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-		fmt.Fprintln(w, "ALIAS\tHOST\tUSER\tPORT\tPROXY")
-		fmt.Fprintln(w, "-----\t----\t----\t----\t-----")
+		fmt.Fprintln(w, "ALIAS	HOST	USER	PORT	PROXY")
+		fmt.Fprintln(w, "-----	----	----	----	-----")
 		for _, e := range entries {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+			fmt.Fprintf(w, "%s	%s	%s	%s	%s
+",
 				e.Alias, e.HostName, e.User, e.Port, e.ProxySummary)
 		}
 		w.Flush()

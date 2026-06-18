@@ -10,6 +10,7 @@ import (
 	"sshady/internal/proxy"
 )
 
+// HostConfig holds the full configuration for an SSH host entry.
 type HostConfig struct {
 	Alias        string
 	HostName     string
@@ -19,14 +20,56 @@ type HostConfig struct {
 	Proxy        proxy.Config
 }
 
+// ManagedEntry is a lightweight view of a managed host for listing.
 type ManagedEntry struct {
-	Alias     string
-	HostName  string
-	User      string
-	Port      string
+	Alias        string
+	HostName     string
+	User         string
+	Port         string
 	ProxySummary string
 }
 
+// sshAliasRe validates SSH Host alias names.
+var sshAliasRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._\-]*$`)
+
+// ValidateHostConfig checks the entire HostConfig for safety.
+func ValidateHostConfig(cfg HostConfig) error {
+	if cfg.Alias == "" {
+		return fmt.Errorf("alias is required")
+	}
+	if !sshAliasRe.MatchString(cfg.Alias) {
+		return fmt.Errorf("invalid alias %q: must be alphanumeric with dots, underscores, or hyphens", cfg.Alias)
+	}
+	if cfg.HostName == "" {
+		return fmt.Errorf("host is required")
+	}
+	if err := proxy.ValidateHost(cfg.HostName); err != nil {
+		return fmt.Errorf("target host: %w", err)
+	}
+	if cfg.User == "" {
+		return fmt.Errorf("user is required")
+	}
+	if err := proxy.ValidateUserPass(cfg.User); err != nil {
+		return fmt.Errorf("SSH user: %w", err)
+	}
+	if cfg.Port == "" {
+		cfg.Port = "22"
+	}
+	if err := proxy.ValidatePort(cfg.Port); err != nil {
+		return fmt.Errorf("SSH port: %w", err)
+	}
+	if cfg.IdentityFile != "" {
+		if strings.ContainsAny(cfg.IdentityFile, "\n\r") {
+			return fmt.Errorf("identity file path contains invalid characters")
+		}
+	}
+	if err := cfg.Proxy.Validate(); err != nil {
+		return fmt.Errorf("proxy config: %w", err)
+	}
+	return nil
+}
+
+// Block generates the SSH config block for a HostConfig.
 func (h HostConfig) Block() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# BEGIN SSHADY:%s\n", h.Alias)
@@ -47,7 +90,12 @@ func (h HostConfig) Block() string {
 	return b.String()
 }
 
+// WriteEntry writes a host entry to ~/.ssh/config with validation, backup, and atomic write.
 func WriteEntry(cfg HostConfig) error {
+	if err := ValidateHostConfig(cfg); err != nil {
+		return err
+	}
+
 	configPath, err := configFilePath()
 	if err != nil {
 		return err
@@ -72,7 +120,8 @@ func WriteEntry(cfg HostConfig) error {
 	}
 
 	if content != "" {
-		if err := os.WriteFile(configPath+".sshady.bak", []byte(content), 0600); err != nil {
+		backupPath := configPath + ".sshady.bak"
+		if err := os.WriteFile(backupPath, []byte(content), 0600); err != nil {
 			return fmt.Errorf("backup failed: %w", err)
 		}
 	}
@@ -89,6 +138,65 @@ func WriteEntry(cfg HostConfig) error {
 	return atomicWrite(configPath, newContent, 0600)
 }
 
+// RemoveEntry removes an sshady-managed entry by alias.
+func RemoveEntry(alias string) error {
+	configPath, err := configFilePath()
+	if err != nil {
+		return err
+	}
+
+	content, err := readConfig(configPath)
+	if err != nil {
+		return err
+	}
+
+	beginMarker := fmt.Sprintf("# BEGIN SSHADY:%s", alias)
+	endMarker := fmt.Sprintf("# END SSHADY:%s", alias)
+
+	if !strings.Contains(content, beginMarker) {
+		return fmt.Errorf("alias %q is not managed by sshady", alias)
+	}
+
+	if err := os.WriteFile(configPath+".sshady.bak", []byte(content), 0600); err != nil {
+		return fmt.Errorf("backup failed: %w", err)
+	}
+
+	lines := strings.Split(content, "\n")
+	var result []string
+	skip := false
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == beginMarker {
+			skip = true
+			for len(result) > 0 && strings.TrimSpace(result[len(result)-1]) == "" {
+				result = result[:len(result)-1]
+			}
+			continue
+		}
+		if trimmed == endMarker {
+			skip = false
+			continue
+		}
+		if skip {
+			continue
+		}
+		// Avoid double blank lines
+		if trimmed == "" && i+1 < len(lines) && strings.TrimSpace(lines[i+1]) == "" {
+			continue
+		}
+		result = append(result, line)
+	}
+
+	newContent := strings.TrimSpace(strings.Join(result, "\n"))
+	if newContent != "" {
+		newContent += "\n"
+	}
+
+	return atomicWrite(configPath, newContent, 0600)
+}
+
+// ReadManagedEntries reads all sshady-managed entries from ~/.ssh/config.
 func ReadManagedEntries() ([]ManagedEntry, error) {
 	configPath, err := configFilePath()
 	if err != nil {
@@ -107,10 +215,10 @@ func ReadManagedEntries() ([]ManagedEntry, error) {
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(line, "# BEGIN SSHADY:") {
+		if strings.HasPrefix(trimmed, "# BEGIN SSHADY:") {
 			inBlock = true
-			current = ManagedEntry{Alias: strings.TrimPrefix(line, "# BEGIN SSHADY:")}
-		} else if strings.HasPrefix(line, "# END SSHADY:") {
+			current = ManagedEntry{Alias: strings.TrimPrefix(trimmed, "# BEGIN SSHADY:")}
+		} else if strings.HasPrefix(trimmed, "# END SSHADY:") {
 			if inBlock {
 				entries = append(entries, current)
 			}
@@ -123,8 +231,8 @@ func ReadManagedEntries() ([]ManagedEntry, error) {
 				current.User = strings.TrimPrefix(trimmed, "User ")
 			case strings.HasPrefix(trimmed, "Port "):
 				current.Port = strings.TrimPrefix(trimmed, "Port ")
-			case strings.HasPrefix(line, "# SSHADY META:"):
-				current.ProxySummary = parseMetaSummary(strings.TrimPrefix(line, "# SSHADY META: "))
+			case strings.HasPrefix(trimmed, "# SSHADY META:"):
+				current.ProxySummary = parseMetaSummary(strings.TrimPrefix(trimmed, "# SSHADY META: "))
 			}
 		}
 	}
@@ -189,6 +297,8 @@ func readConfig(path string) (string, error) {
 	return string(data), nil
 }
 
+// atomicWrite writes content to path via temp-file + rename for atomicity.
+// FIXED: defer cleanup is safe — after rename, os.Remove is a no-op on the old path.
 func atomicWrite(path, content string, perm os.FileMode) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".sshady-tmp-*")
@@ -196,20 +306,29 @@ func atomicWrite(path, content string, perm os.FileMode) error {
 		return fmt.Errorf("cannot create temp file: %w", err)
 	}
 	tmpName := tmp.Name()
+
 	defer func() {
-		tmp.Close()
 		os.Remove(tmpName)
 	}()
 
 	if err := tmp.Chmod(perm); err != nil {
+		tmp.Close()
 		return err
 	}
 	if _, err := tmp.WriteString(content); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
 		return err
 	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
 
-	return os.Rename(tmpName, path)
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("atomic rename failed: %w", err)
+	}
+	return nil
 }

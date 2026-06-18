@@ -11,6 +11,7 @@ sshady.exe
 *.test
 *.out
 dist/
+bin/
 
 # Vendor
 vendor/
@@ -25,3 +26,11 @@ vendor/
 # Environment / secrets
 .env
 .env.*
+
+# Test coverage
+coverage.out
+coverage.html
+*.prof
+
+# Backup files
+*.bak
