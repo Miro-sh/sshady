@@ -25,7 +25,7 @@ Built for opsec-conscious sysadmins, pentesters, and anyone who cares where thei
 - **Interactive wizard** — run `sshady`, answer the prompts, done.
 - **Non-interactive mode** — full flag support for scripting and automation.
 - **Four proxy types** — SOCKS5, HTTP CONNECT, Tor, and SSH jump hosts.
-- **Config management** — every entry is tracked, listed with `sshady list`, and never touches your existing `~/.ssh/config` entries.
+- **Config management** — full CRUD on your entries: `create`, `list`, `show`, `edit`, `delete`. Never touches your existing `~/.ssh/config` entries.
 - **Safe by default** — automatic backups, atomic writes, strict `0600` permissions.
 
 ## Prerequisites
@@ -154,13 +154,16 @@ ssh myserver
 
 ## Commands
 
-| Command               | Description                              |
-|-----------------------|------------------------------------------|
-| `sshady`              | Launch the interactive wizard            |
-| `sshady create`       | Same as above (explicit subcommand)      |
-| `sshady create [flags]` | Non-interactive mode, see flags below  |
-| `sshady list`         | List all entries managed by sshady       |
-| `sshady --help`       | Show help                                |
+| Command                 | Description                                   |
+|-------------------------|-----------------------------------------------|
+| `sshady`                | Launch the interactive wizard                 |
+| `sshady create`         | Same as above (explicit subcommand)           |
+| `sshady create [flags]` | Non-interactive mode, see flags below         |
+| `sshady list`           | List all entries managed by sshady            |
+| `sshady show <alias>`   | Show full details of an entry (`--reveal` to unmask the proxy password) |
+| `sshady edit <alias>`   | Edit an entry (wizard pre-filled, or flags)   |
+| `sshady delete <alias>` | Delete an entry (`--force` to skip confirmation) |
+| `sshady --help`         | Show help                                     |
 
 ### create flags
 
@@ -177,6 +180,33 @@ ssh myserver
 | `--proxy-user`   | Proxy username                          | none                     |
 | `--proxy-pass`   | Proxy password                          | none                     |
 | `--jump-host`    | Jump host (`user@host`)                 | required for jump        |
+
+### edit flags
+
+`sshady edit <alias>` accepts the same flags as `create` (except `--alias`). Only the flags you pass are updated — everything else is kept:
+
+```bash
+# Switch an entry to port 443 (e.g. to pass proxies that block port 22)
+sshady edit myserver --port 443
+
+# Change proxy credentials
+sshady edit myserver --proxy-user alice --proxy-pass s3cr3t
+
+# Switch proxy type entirely
+sshady edit myserver --proxy-type tor
+```
+
+## Man pages
+
+Pre-generated man pages ship in the `man/` directory and inside every release archive:
+
+```bash
+sudo cp man/*.1 /usr/local/share/man/man1/
+sudo mandb
+man sshady
+```
+
+Regenerate them after changing commands with `sshady gen-man man` (hidden maintainer command).
 
 ## Security notes
 

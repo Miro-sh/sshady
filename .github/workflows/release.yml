@@ -49,6 +49,7 @@ jobs:
           mkdir "$PKG"
           mv "$BIN" "$PKG/"
           cp README.md "$PKG/"
+          cp -r man "$PKG/"
 
           if [ "$GOOS" = "windows" ]; then
             zip -r "$PKG.zip" "$PKG"

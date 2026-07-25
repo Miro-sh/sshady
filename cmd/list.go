@@ -10,8 +10,9 @@ import (
 )
 
 var listCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List all SSH configs managed by sshady",
+	Use:     "list",
+	Short:   "List all SSH configs managed by sshady",
+	Example: `  sshady list`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		entries, err := sshconf.ReadManagedEntries()
 		if err != nil {

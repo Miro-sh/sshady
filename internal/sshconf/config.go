@@ -62,31 +62,234 @@ func WriteEntry(cfg HostConfig) error {
 		return err
 	}
 
-	if strings.Contains(content, fmt.Sprintf("# BEGIN SSHADY:%s", cfg.Alias)) {
+	if strings.Contains(content, fmt.Sprintf("# BEGIN SSHADY:%s\n", cfg.Alias)) {
 		return fmt.Errorf("alias %q is already managed by sshady; use 'sshady list' to see existing entries", cfg.Alias)
 	}
 
-	re := regexp.MustCompile(fmt.Sprintf(`(?m)^Host\s+%s(\s|$)`, regexp.QuoteMeta(cfg.Alias)))
-	if re.MatchString(content) {
-		return fmt.Errorf("alias %q already exists in ~/.ssh/config (not managed by sshady)", cfg.Alias)
+	if err := checkAliasFree(content, cfg.Alias); err != nil {
+		return err
 	}
 
-	if content != "" {
-		if err := os.WriteFile(configPath+".sshady.bak", []byte(content), 0600); err != nil {
-			return fmt.Errorf("backup failed: %w", err)
+	if err := backup(configPath, content); err != nil {
+		return err
+	}
+
+	return atomicWrite(configPath, appendBlock(content, cfg.Block()), 0600)
+}
+
+func ReadEntry(alias string) (HostConfig, error) {
+	configPath, err := configFilePath()
+	if err != nil {
+		return HostConfig{}, err
+	}
+
+	content, err := readConfig(configPath)
+	if err != nil {
+		return HostConfig{}, err
+	}
+
+	cfg := HostConfig{Alias: alias}
+	meta := ""
+	inBlock := false
+	found := false
+
+	for _, line := range strings.Split(content, "\n") {
+		if line == "# BEGIN SSHADY:"+alias {
+			inBlock = true
+			found = true
+			continue
+		}
+		if line == "# END SSHADY:"+alias {
+			break
+		}
+		if !inBlock {
+			continue
+		}
+
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "# SSHADY META:"):
+			meta = strings.TrimPrefix(line, "# SSHADY META: ")
+		case strings.HasPrefix(trimmed, "HostName "):
+			cfg.HostName = strings.TrimPrefix(trimmed, "HostName ")
+		case strings.HasPrefix(trimmed, "User "):
+			cfg.User = strings.TrimPrefix(trimmed, "User ")
+		case strings.HasPrefix(trimmed, "Port "):
+			cfg.Port = strings.TrimPrefix(trimmed, "Port ")
+		case strings.HasPrefix(trimmed, "IdentityFile "):
+			cfg.IdentityFile = strings.TrimPrefix(trimmed, "IdentityFile ")
+		case strings.HasPrefix(trimmed, "ProxyJump "):
+			cfg.Proxy.Type = proxy.TypeJump
+			cfg.Proxy.JumpHost = strings.TrimPrefix(trimmed, "ProxyJump ")
+		case strings.HasPrefix(trimmed, "ProxyCommand "):
+			parseProxyCommand(strings.TrimPrefix(trimmed, "ProxyCommand "), &cfg.Proxy)
 		}
 	}
 
-	newContent := content
-	if newContent != "" && !strings.HasSuffix(newContent, "\n") {
-		newContent += "\n"
+	if !found {
+		return HostConfig{}, fmt.Errorf("no sshady-managed entry with alias %q", alias)
 	}
-	if newContent != "" {
-		newContent += "\n"
-	}
-	newContent += cfg.Block()
 
-	return atomicWrite(configPath, newContent, 0600)
+	for _, part := range strings.Fields(meta) {
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		if kv[0] == "type" {
+			cfg.Proxy.Type = proxy.Type(kv[1])
+		}
+	}
+
+	return cfg, nil
+}
+
+func parseProxyCommand(cmdline string, p *proxy.Config) {
+	fields := strings.Fields(cmdline)
+	for i := 0; i < len(fields); i++ {
+		switch fields[i] {
+		case "--proxy-type":
+			if i+1 < len(fields) && p.Type == "" {
+				p.Type = proxy.Type(fields[i+1])
+			}
+			i++
+		case "--proxy":
+			if i+1 < len(fields) {
+				host, port := fields[i+1], ""
+				if idx := strings.LastIndex(host, ":"); idx != -1 {
+					host, port = host[:idx], host[idx+1:]
+				}
+				p.Host = host
+				p.Port = port
+			}
+			i++
+		case "--proxy-auth":
+			if i+1 < len(fields) {
+				userpass := strings.SplitN(fields[i+1], ":", 2)
+				p.Username = userpass[0]
+				if len(userpass) == 2 {
+					p.Password = userpass[1]
+				}
+			}
+			i++
+		}
+	}
+}
+
+func UpdateEntry(oldAlias string, cfg HostConfig) error {
+	configPath, err := configFilePath()
+	if err != nil {
+		return err
+	}
+
+	content, err := readConfig(configPath)
+	if err != nil {
+		return err
+	}
+
+	stripped, found := removeBlock(content, oldAlias)
+	if !found {
+		return fmt.Errorf("no sshady-managed entry with alias %q", oldAlias)
+	}
+
+	if cfg.Alias != oldAlias {
+		if strings.Contains(stripped, fmt.Sprintf("# BEGIN SSHADY:%s\n", cfg.Alias)) {
+			return fmt.Errorf("alias %q is already managed by sshady", cfg.Alias)
+		}
+		if err := checkAliasFree(stripped, cfg.Alias); err != nil {
+			return err
+		}
+	}
+
+	if err := backup(configPath, content); err != nil {
+		return err
+	}
+
+	return atomicWrite(configPath, appendBlock(stripped, cfg.Block()), 0600)
+}
+
+func DeleteEntry(alias string) error {
+	configPath, err := configFilePath()
+	if err != nil {
+		return err
+	}
+
+	content, err := readConfig(configPath)
+	if err != nil {
+		return err
+	}
+
+	stripped, found := removeBlock(content, alias)
+	if !found {
+		return fmt.Errorf("no sshady-managed entry with alias %q", alias)
+	}
+
+	if err := backup(configPath, content); err != nil {
+		return err
+	}
+
+	return atomicWrite(configPath, stripped, 0600)
+}
+
+func checkAliasFree(content, alias string) error {
+	re := regexp.MustCompile(fmt.Sprintf(`(?m)^Host\s+%s(\s|$)`, regexp.QuoteMeta(alias)))
+	if re.MatchString(content) {
+		return fmt.Errorf("alias %q already exists in ~/.ssh/config (not managed by sshady)", alias)
+	}
+	return nil
+}
+
+func backup(configPath, content string) error {
+	if content == "" {
+		return nil
+	}
+	if err := os.WriteFile(configPath+".sshady.bak", []byte(content), 0600); err != nil {
+		return fmt.Errorf("backup failed: %w", err)
+	}
+	return nil
+}
+
+func appendBlock(content, block string) string {
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	if content != "" {
+		content += "\n"
+	}
+	return content + block
+}
+
+func removeBlock(content, alias string) (string, bool) {
+	begin := "# BEGIN SSHADY:" + alias
+	end := "# END SSHADY:" + alias
+
+	var out []string
+	inBlock := false
+	found := false
+
+	for _, line := range strings.Split(content, "\n") {
+		switch line {
+		case begin:
+			inBlock = true
+			found = true
+			continue
+		case end:
+			inBlock = false
+			continue
+		}
+		if !inBlock {
+			out = append(out, line)
+		}
+	}
+
+	if !found {
+		return content, false
+	}
+
+	result := strings.TrimRight(strings.Join(out, "\n"), "\n")
+	if result != "" {
+		result += "\n"
+	}
+	return result, true
 }
 
 func ReadManagedEntries() ([]ManagedEntry, error) {
@@ -163,6 +366,9 @@ func parseMetaSummary(meta string) string {
 }
 
 func configFilePath() (string, error) {
+	if p := os.Getenv("SSHADY_CONFIG"); p != "" {
+		return p, nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("cannot find home directory: %w", err)
@@ -171,11 +377,11 @@ func configFilePath() (string, error) {
 }
 
 func ensureSSHDir() error {
-	home, err := os.UserHomeDir()
+	configPath, err := configFilePath()
 	if err != nil {
 		return err
 	}
-	return os.MkdirAll(filepath.Join(home, ".ssh"), 0700)
+	return os.MkdirAll(filepath.Dir(configPath), 0700)
 }
 
 func readConfig(path string) (string, error) {
