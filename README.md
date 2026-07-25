@@ -48,15 +48,21 @@ brew install nmap
 
 ### Prebuilt binaries
 
-Grab the latest build for your platform from the [releases page](https://github.com/Miro-sh/sshady/releases):
+Grab the binary for your platform from the [releases page](https://github.com/Miro-sh/sshady/releases):
 
 ```bash
 # Linux (amd64)
-curl -L https://github.com/Miro-sh/sshady/releases/latest/download/sshady_linux_amd64.tar.gz | tar xz
-sudo mv sshady_linux_amd64/sshady /usr/local/bin/
+curl -LO https://github.com/Miro-sh/sshady/releases/latest/download/sshady_linux_amd64
+chmod +x sshady_linux_amd64
+sudo mv sshady_linux_amd64 /usr/local/bin/sshady
 ```
 
-Archives are published for Linux (amd64/arm64), macOS (Intel/Apple Silicon), and Windows (amd64), with a `checksums.txt` to verify integrity.
+Raw binaries are published for Linux (amd64/arm64), macOS (Intel/Apple Silicon), and Windows (amd64) — plus `.tar.gz`/`.zip` archives that bundle the man pages, and a `checksums.txt` to verify integrity:
+
+```bash
+curl -LO https://github.com/Miro-sh/sshady/releases/latest/download/checksums.txt
+sha256sum --check --ignore-missing checksums.txt
+```
 
 ### Build from source
 

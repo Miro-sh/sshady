@@ -34,6 +34,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Build and package
+        id: build
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
@@ -45,6 +46,13 @@ jobs:
 
           go build -trimpath -ldflags="-s -w -X sshady/cmd.version=$VERSION" -o "$BIN" .
 
+          # Raw binary, for direct download
+          RAW="sshady_${GOOS}_${GOARCH}"
+          [ "$GOOS" = "windows" ] && RAW="sshady_${GOOS}_${GOARCH}.exe"
+          cp "$BIN" "$RAW"
+          echo "raw=$RAW" >> "$GITHUB_OUTPUT"
+
+          # Archive with binary + docs + man pages
           PKG="sshady_${GOOS}_${GOARCH}"
           mkdir "$PKG"
           mv "$BIN" "$PKG/"
@@ -57,12 +65,19 @@ jobs:
             tar czf "$PKG.tar.gz" "$PKG"
           fi
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
         with:
           name: pkg-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
             *.tar.gz
             *.zip
+
+      - name: Upload raw binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ steps.build.outputs.raw }}
 
   release:
     needs: build
@@ -70,16 +85,14 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: pkg-*
           merge-multiple: true
 
       - name: Generate checksums
-        run: sha256sum *.tar.gz *.zip > checksums.txt
+        run: sha256sum sshady_*_* > checksums.txt
 
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
-            *.tar.gz
-            *.zip
+            sshady_*_*
             checksums.txt
