@@ -52,17 +52,18 @@ jobs:
           cp "$BIN" "$RAW"
           echo "raw=$RAW" >> "$GITHUB_OUTPUT"
 
-          # Archive with binary + docs + man pages
+          # Archive with binary + docs + man pages (built in dist/ to
+          # avoid clashing with the raw binary name)
           PKG="sshady_${GOOS}_${GOARCH}"
-          mkdir "$PKG"
-          mv "$BIN" "$PKG/"
-          cp README.md "$PKG/"
-          cp -r man "$PKG/"
+          mkdir -p "dist/$PKG"
+          mv "$BIN" "dist/$PKG/"
+          cp README.md "dist/$PKG/"
+          cp -r man "dist/$PKG/"
 
           if [ "$GOOS" = "windows" ]; then
-            zip -r "$PKG.zip" "$PKG"
+            (cd dist && zip -r "../$PKG.zip" "$PKG")
           else
-            tar czf "$PKG.tar.gz" "$PKG"
+            tar czf "$PKG.tar.gz" -C dist "$PKG"
           fi
 
       - name: Upload archive
