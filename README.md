@@ -9,8 +9,9 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Miro-sh/sshady/releases"><img src="https://img.shields.io/github/v/release/Miro-sh/sshady?include_prereleases" alt="Latest release" /></a>
   <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white" alt="Go version" /></a>
-  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey" alt="Platform" />
+  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey" alt="Platform" />
 </p>
 
 ---
@@ -44,6 +45,20 @@ brew install nmap
 ```
 
 ## Installation
+
+### Prebuilt binaries
+
+Grab the latest build for your platform from the [releases page](https://github.com/Miro-sh/sshady/releases):
+
+```bash
+# Linux (amd64)
+curl -L https://github.com/Miro-sh/sshady/releases/latest/download/sshady_linux_amd64.tar.gz | tar xz
+sudo mv sshady_linux_amd64/sshady /usr/local/bin/
+```
+
+Archives are published for Linux (amd64/arm64), macOS (Intel/Apple Silicon), and Windows (amd64), with a `checksums.txt` to verify integrity.
+
+### Build from source
 
 ```bash
 git clone https://github.com/Miro-sh/sshady

@@ -6,9 +6,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var version = "dev"
+
 var rootCmd = &cobra.Command{
-	Use:   "sshady",
-	Short: "SSH proxy config generator — hide your IP, look innocent",
+	Use:     "sshady",
+	Version: version,
+	Short:   "SSH proxy config generator — hide your IP, look innocent",
 	Long: `sshady generates SSH Host entries with proxy configurations
 and writes them directly to ~/.ssh/config.
 
